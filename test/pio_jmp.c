@@ -143,6 +143,28 @@ static void jmp_x_dec_when_one(void **state) {
     epio_free(epio);
 }
 
+static void jmp_x_dec_when_bit31(void **state) {
+    setup_jmp_x_dec_when_bit31(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), 0x80000000);
+
+    epio_step_cycles(epio, 1);
+
+    // Only bit 31 is set so the jump depends on the whole register
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 2);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), 0x7FFFFFFF);
+    assert_int_equal(epio_get_cycle_count(epio), 1);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_y(epio, 0, 0), 20);
+
+    epio_free(epio);
+}
+
 static void jmp_not_y_when_zero(void **state) {
     setup_jmp_not_y_when_zero(state);
     epio_t *epio = epio_from_apio();
@@ -246,6 +268,28 @@ static void jmp_y_dec_when_one(void **state) {
     epio_step_cycles(epio, 1);
     assert_int_equal(epio_peek_sm_x(epio, 0, 0), 20);
     
+    epio_free(epio);
+}
+
+static void jmp_y_dec_when_bit31(void **state) {
+    setup_jmp_y_dec_when_bit31(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    assert_int_equal(epio_peek_sm_y(epio, 0, 0), 0x80000000);
+
+    epio_step_cycles(epio, 1);
+
+    // Only bit 31 is set so the jump depends on the whole register
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 2);
+    assert_int_equal(epio_peek_sm_y(epio, 0, 0), 0x7FFFFFFF);
+    assert_int_equal(epio_get_cycle_count(epio), 1);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), 20);
+
     epio_free(epio);
 }
 
@@ -452,7 +496,7 @@ static void jmp_not_osre_when_empty(void **state) {
     
     epio_step_cycles(epio, 1);
     
-    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 2);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 1);
     assert_int_equal(epio_get_cycle_count(epio), 1);
     
     epio_step_cycles(epio, 1);
@@ -473,7 +517,7 @@ static void jmp_not_osre_when_not_empty(void **state) {
     
     epio_step_cycles(epio, 1);
     
-    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 1);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 2);
     assert_int_equal(epio_get_cycle_count(epio), 1);
     
     epio_step_cycles(epio, 1);
@@ -495,8 +539,8 @@ static void jmp_not_osre_threshold_at(void **state) {
     
     epio_step_cycles(epio, 1);
     
-    // Should jump - at threshold means empty
-    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 2);
+    // Should not jump - at threshold means empty
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 1);
     assert_int_equal(epio_get_cycle_count(epio), 1);
     
     epio_step_cycles(epio, 1);
@@ -517,13 +561,41 @@ static void jmp_not_osre_threshold_below(void **state) {
     
     epio_step_cycles(epio, 1);
     
-    // Should not jump - below threshold, OSR not empty
-    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 1);
+    // Should jump - below threshold, OSR not empty
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 2);
     assert_int_equal(epio_get_cycle_count(epio), 1);
     
     epio_step_cycles(epio, 1);
     assert_int_equal(epio_peek_sm_x(epio, 0, 0), 20);
     
+    epio_free(epio);
+}
+
+static void jmp_not_osre_loop(void **state) {
+    setup_jmp_not_osre_loop(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    assert_int_equal(epio_peek_sm_osr_count(epio, 0, 0), 0);
+
+    // Each OUT and JMP pair leaves bits in the OSR so the JMP loops back
+    for (int ii = 1; ii <= 3; ii++) {
+        epio_step_cycles(epio, 2);
+        assert_int_equal(epio_peek_sm_osr_count(epio, 0, 0), ii * 8);
+        assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 0);
+    }
+
+    // The fourth OUT empties the OSR so the JMP falls through
+    epio_step_cycles(epio, 2);
+    assert_int_equal(epio_peek_sm_osr_count(epio, 0, 0), 32);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 2);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), 20);
+    assert_int_equal(epio_get_cycle_count(epio), 9);
+
     epio_free(epio);
 }
 
@@ -602,6 +674,31 @@ static void jmp_pin_inverted_gpiobase16(void **state) {
     epio_free(epio);
 }
 
+static void jmp_pc_wraps_at_31(void **state) {
+    setup_jmp_pc_wraps_at_31(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    // Cycle 1: JMP to address 31
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 31);
+
+    // Cycle 2: SET Y, 20 at address 31.  Address 31 isn't the wrap top so the
+    // PC wraps to 0
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_y(epio, 0, 0), 20);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 0);
+
+    // Cycle 3: the JMP at address 0 runs again
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 31);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), 0);
+
+    epio_free(epio);
+}
+
 int main(void) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(jmp_unconditional),
@@ -610,11 +707,13 @@ int main(void) {
         cmocka_unit_test(jmp_x_dec_when_zero),
         cmocka_unit_test(jmp_x_dec_when_nonzero),
         cmocka_unit_test(jmp_x_dec_when_one),
+        cmocka_unit_test(jmp_x_dec_when_bit31),
         cmocka_unit_test(jmp_not_y_when_zero),
         cmocka_unit_test(jmp_not_y_when_nonzero),
         cmocka_unit_test(jmp_y_dec_when_zero),
         cmocka_unit_test(jmp_y_dec_when_nonzero),
         cmocka_unit_test(jmp_y_dec_when_one),
+        cmocka_unit_test(jmp_y_dec_when_bit31),
         cmocka_unit_test(jmp_x_not_y_when_equal),
         cmocka_unit_test(jmp_x_not_y_when_different),
         cmocka_unit_test(jmp_pin_when_low),
@@ -627,9 +726,11 @@ int main(void) {
         cmocka_unit_test(jmp_not_osre_when_not_empty),
         cmocka_unit_test(jmp_not_osre_threshold_at),
         cmocka_unit_test(jmp_not_osre_threshold_below),
+        cmocka_unit_test(jmp_not_osre_loop),
         cmocka_unit_test(jmp_pin_inverted_low),
         cmocka_unit_test(jmp_pin_inverted_high),
         cmocka_unit_test(jmp_pin_inverted_gpiobase16),
+        cmocka_unit_test(jmp_pc_wraps_at_31),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

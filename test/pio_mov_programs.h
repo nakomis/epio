@@ -256,3 +256,109 @@ static int setup_mov_status(uint16_t mov_instr, uint32_t execctrl,
     APIO_ENABLE_SMS(0, 1);
     while (1) { APIO_ASM_WFI(); }
 }
+
+// MOV PINDIRS, NULL to GPIO 5, which block 0 does NOT control
+static int setup_mov_pindirs_without_control(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_GPIO_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_MOV_PINDIRS_NULL);
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_NOP);
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(0);
+    APIO_SM_PINCTRL_SET(
+        APIO_OUT_BASE(5) |
+        APIO_OUT_COUNT(1)
+    );
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// MOV PINDIRS, NULL to GPIO 5, which block 0 controls
+static int setup_mov_pindirs_with_control(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_GPIO_INIT();
+    APIO_GPIO_INPUT_OUTPUT(5, 0);
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_MOV_PINDIRS_NULL);
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_NOP);
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(0);
+    APIO_SM_PINCTRL_SET(
+        APIO_OUT_BASE(5) |
+        APIO_OUT_COUNT(1)
+    );
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// MOV PINS, !NULL with OUT_COUNT 32 - block 0 controls GPIO 31, the last pin
+static int setup_mov_pins_out_count_32(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_GPIO_INIT();
+    APIO_GPIO_INPUT_OUTPUT(31, 0);
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_MOV_SRC_INVERT(APIO_MOV_PINS_NULL));
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_NOP);
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(0);
+    APIO_SM_PINCTRL_SET(
+        APIO_OUT_BASE(0) |
+        APIO_OUT_COUNT(32)
+    );
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// MOV X, PINS with IN_COUNT 0, which means 32
+static int setup_mov_x_pins_in_count_32(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_MOV_X_PINS);
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_NOP);
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(APIO_IN_COUNT(0));
+    APIO_SM_PINCTRL_SET(APIO_IN_BASE(0));
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}

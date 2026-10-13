@@ -15,6 +15,30 @@ static void epio_sm_step(epio_t *epio, uint8_t block, uint8_t sm);
 static void epio_finish_step(epio_t *epio);
 static void epio_after_step(epio_t *epio);
 
+// Refills an empty OSR from the TX FIFO, if autopull is enabled
+static void epio_autopull(epio_t *epio, uint8_t block, uint8_t sm) {
+    if (AUTOPULL_GET(block, sm) &&
+        SM(block, sm).osr_count >= PULL_THRESH_GET(block, sm) &&
+        epio_tx_fifo_depth(epio, block, sm) > 0) {
+        SM(block, sm).osr = epio_pop_tx_fifo(epio, block, sm);
+        SM(block, sm).osr_count = 0;
+    }
+}
+
+// PINCTRL OUT_COUNT, which the datasheet limits to 32
+static uint8_t epio_out_count(epio_t *epio, uint8_t block, uint8_t sm) {
+    uint8_t out_count = OUT_COUNT_GET(block, sm);
+    assert(out_count <= 32 && "Invalid OUT_COUNT");
+    return out_count;
+}
+
+// PINCTRL SET_COUNT, which the datasheet limits to 5
+static uint8_t epio_set_count(epio_t *epio, uint8_t block, uint8_t sm) {
+    uint8_t set_count = SET_COUNT_GET(block, sm);
+    assert(set_count <= 5 && "Invalid SET_COUNT");
+    return set_count;
+}
+
 void epio_set_instr(epio_t *epio, uint8_t block, uint8_t instr_num, uint16_t instr) {
     assert(block < NUM_PIO_BLOCKS && "Invalid PIO block");
     assert(instr_num < NUM_INSTRS_PER_BLOCK && "Instruction number exceeds block capacity");
@@ -99,6 +123,7 @@ static void epio_sm_step(epio_t *epio, uint8_t block, uint8_t sm) {
     // Execute the instruction
     uint8_t dont_update_pc;
     uint8_t was_exec_pending = SM(block, sm).exec_pending;
+    uint8_t out_cycle = 0;
     if (SM(block, sm).delay > 0) {
         SM(block, sm).delay--;
 #if defined(EPIO_DEBUG)
@@ -108,7 +133,13 @@ static void epio_sm_step(epio_t *epio, uint8_t block, uint8_t sm) {
 #endif // EPIO_DEBUG
         dont_update_pc = 1; // PC already points to the next instruction
     } else {
+        out_cycle = ((instr >> 13) & 0x7) == OC_OUT;
         dont_update_pc = epio_exec_instr_sm(epio, block, sm, instr);
+    }
+
+    // Autopull also refills on cycles without an OUT (11.5.4.2)
+    if (!out_cycle) {
+        epio_autopull(epio, block, sm);
     }
 
     // Handle wrap
@@ -129,7 +160,7 @@ static void epio_sm_step(epio_t *epio, uint8_t block, uint8_t sm) {
         if (PC(block, sm) == wrap_top) {
             PC(block, sm) = wrap_bottom;
         } else {
-            PC(block, sm)++;
+            PC(block, sm) = (PC(block, sm) + 1) % NUM_INSTRS_PER_BLOCK;
         }
     }
 }
@@ -153,8 +184,11 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
     uint8_t process_new_delay = 1;
 
     // Calculate any delay from this instruction now, so it can be overriden on
-    // a per-instruction basis (OUT EXEC, delay is ignored).
-    uint8_t new_delay = (instr >> 8) & 0x1F;
+    // a per-instruction basis (OUT EXEC, delay is ignored).  Side-set takes the
+    // top SIDESET_COUNT bits of the field.
+    uint8_t sideset_count = SIDESET_COUNT_GET(block, sm);
+    assert(sideset_count <= 5 && "Invalid SIDESET_COUNT");
+    uint8_t new_delay = (instr >> 8) & (0x1F >> sideset_count);
 
     uint16_t opcode = (instr >> 13) & 0x7;
     switch (opcode) {
@@ -175,7 +209,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
 
                 case JMP_COND_X_DEC:
                     ;
-                    uint8_t x = SM(block, sm).x;
+                    uint32_t x = SM(block, sm).x;
                     SM(block, sm).x--;
                     if (x != 0) {
                         NEW_INSTR(new);
@@ -190,7 +224,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
 
                 case JMP_COND_Y_DEC:
                     ;
-                    uint8_t y = SM(block, sm).y;
+                    uint32_t y = SM(block, sm).y;
                     SM(block, sm).y--;
                     if (y != 0) {
                         NEW_INSTR(new);
@@ -205,7 +239,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
 
                 case JMP_COND_PIN:
                     ;
-                    if (epio_get_jmp_pin_state(epio, block, sm)) {
+                    if (epio_get_jmp_pin_state(epio, block, sm, 0)) {
                         NEW_INSTR(new);
                     }
                     break;
@@ -213,16 +247,10 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                 case JMP_NOT_OSRE:
                     ;
                     uint8_t pull_threshold = PULL_THRESH_GET(block, sm);
-                    if (SM(block, sm).osr_count >= pull_threshold) {
+                    if (SM(block, sm).osr_count < pull_threshold) {
                         NEW_INSTR(new);
                     }
                     break;
-
-                    // LCOV_EXCL_START
-                default:
-                    assert(0 && "Invalid JMP condition");
-                    break;
-                    // LCOV_EXCL_STOP
             }
             break;
 
@@ -243,8 +271,8 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                 case WAIT_SRC_PIN:
                     ;
                     uint8_t pin_base = IN_BASE_GET(block, sm);
-                    uint8_t pin = pin_base + wait_index + GPIOBASE(block);
-                    uint8_t pin_state = epio_get_gpio_input(epio, pin);
+                    uint8_t pin = ((pin_base + wait_index) % 32) + GPIOBASE(block);
+                    uint8_t pin_state = (wait_index < IN_COUNT(block, sm)) ? epio_get_gpio_input(epio, pin) : 0;
                     condition_met = (pin_state == polarity);
                     break;
                     
@@ -268,12 +296,6 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                         case IRQ_BLOCK_NEXT:
                             irq_block = (block + 1) % NUM_PIO_BLOCKS;
                             break;
-
-                            // LCOV_EXCL_START
-                        default:
-                            assert(0 && "Invalid IRQ block");
-                            break;
-                            // LCOV_EXCL_STOP
                     }
                     uint8_t irq_state = epio_peek_block_irq_num(epio, irq_block, irq_index);
                     condition_met = (irq_state == polarity);
@@ -285,15 +307,10 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
 
                 case WAIT_SRC_JMP_PIN:
                     ;
-                    uint8_t jmp_pin_state = epio_get_jmp_pin_state(epio, block, sm);
+                    assert(wait_index < 4 && "Reserved WAIT JMPPIN index");
+                    uint8_t jmp_pin_state = epio_get_jmp_pin_state(epio, block, sm, wait_index);
                     condition_met = (jmp_pin_state == polarity);
                     break;
-                    
-                    // LCOV_EXCL_START
-                default:
-                    assert(0 && "Invalid WAIT source");
-                    break;
-                    // LCOV_EXCL_STOP
             }
             
             if (!condition_met) {
@@ -318,10 +335,11 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                     case IN_SRC_PINS:
                         ;
                         uint8_t in_base = IN_BASE_GET(block, sm);
-                        for (int ii = 0; ii < in_count; ii++) {
+                        uint8_t in_pins = IN_COUNT(block, sm);
+                        for (int ii = 0; ii < in_count && ii < in_pins; ii++) {
                             uint8_t pin = ((in_base + ii) % 32) + GPIOBASE(block);
                             if (epio_get_gpio_input(epio, pin)) {
-                                in_data |= (1 << ii);
+                                in_data |= (1u << ii);
                             }
                         }
                         break;
@@ -346,11 +364,8 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                         in_data = SM(block, sm).osr;
                         break;
                         
-                        // LCOV_EXCL_START
                     default:
                         assert(0 && "Invalid IN source");
-                        break;
-                        // LCOV_EXCL_STOP
                 }
                 
                 // Shift into ISR
@@ -387,24 +402,18 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
 
         case OC_OUT:
             ;
-            // Check autopull FIRST, before doing anything else
+            // An OUT can't refill an empty OSR and shift it out on the same
+            // cycle so it stalls whether or not the refill happens (11.5.4.2)
             uint8_t autopull = AUTOPULL_GET(block, sm);
             uint8_t pull_threshold = PULL_THRESH_GET(block, sm);
-                    
             if (autopull && SM(block, sm).osr_count >= pull_threshold) {
-                if (epio_tx_fifo_depth(epio, block, sm) > 0) {
-                    // Pull fresh data and unstall
-                    SM(block, sm).osr = epio_pop_tx_fifo(epio, block, sm);
-                    SM(block, sm).osr_count = 0;
-                    SM(block, sm).stalled = 0;
-                } else {
-                    // Stall - don't execute OUT
-                    SM(block, sm).stalled = 1;
-                    dont_update_pc = 1;
-                    process_new_delay = 0;
-                    break;  // Exit case early
-                }
+                epio_autopull(epio, block, sm);
+                SM(block, sm).stalled = 1;
+                dont_update_pc = 1;
+                process_new_delay = 0;
+                break;
             }
+            SM(block, sm).stalled = 0;
 
             uint8_t out_dest = (instr >> 5) & 0x7;
             uint8_t out_count = instr & 0x1F;
@@ -431,7 +440,8 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                 case OUT_DEST_PINS:
                     ;
                     uint8_t out_base = OUT_BASE_GET(block, sm);
-                    for (int ii = 0; ii < out_count; ii++) {
+                    uint8_t out_pins = epio_out_count(epio, block, sm);
+                    for (int ii = 0; ii < out_pins; ii++) {
                         uint8_t pin = ((out_base + ii) % 32) + GPIOBASE(block);
                         if (epio_block_can_control_gpio_output(epio, block, pin)) {
                             epio_set_gpio_output_level(epio, pin, (out_data >> ii) & 0x1);
@@ -453,20 +463,23 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                 case OUT_DEST_PINDIRS:
                     ;
                     uint8_t pindirs_base = OUT_BASE_GET(block, sm);
-                    for (int ii = 0; ii < out_count; ii++) {
+                    uint8_t pindirs_pins = epio_out_count(epio, block, sm);
+                    for (int ii = 0; ii < pindirs_pins; ii++) {
                         uint8_t pin = ((pindirs_base + ii) % 32) + GPIOBASE(block);
                         if ((out_data >> ii) & 0x1) {
                             if (epio_block_can_control_gpio_output(epio, block, pin)) {
                                 epio_set_gpio_output(epio, pin);
                             }
                         } else {
-                            epio_set_gpio_input(epio, pin);
+                            if (epio_block_can_control_gpio_output(epio, block, pin)) {
+                                epio_set_gpio_input(epio, pin);
+                            }
                         }
                     }
                     break;
                     
                 case OUT_DEST_PC:
-                    PC(block, sm) = out_data;
+                    PC(block, sm) = out_data & 0x1F; // PC is 5 bits
                     dont_update_pc = 1;
                     break;
                     
@@ -480,13 +493,10 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                     SM(block, sm).exec_pending = 1;
                     new_delay = 0; // OUT EXEC ignores delay field in instruction
                     break;
-                    
-                    // LCOV_EXCL_START
-                default:
-                    assert(0 && "Invalid OUT destination");
-                    break;
-                    // LCOV_EXCL_STOP
             }
+
+            // The refill can happen alongside the last of the data shifting out
+            epio_autopull(epio, block, sm);
             break;
 
         case OC_PUSH_PULL_MOV:
@@ -592,7 +602,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                     for (int ii = 0; ii < in_count; ii++) {
                         uint8_t pin = ((in_base + ii) % 32) + GPIOBASE(block);
                         if (epio_get_gpio_input(epio, pin)) {
-                            mov_value |= (1 << ii);
+                            mov_value |= (1u << ii);
                         }
                     }
                     break;
@@ -625,19 +635,28 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                             
                         case 0b10: // IRQ
                             ;
-                            uint8_t irq_block, irq_index;
-                            uint8_t idx_mode = (status_n >> 3) & 0b11;
-                            uint8_t index = status_n & 0b111;
-                            HANDLE_IRQ_MODE(block, sm, idx_mode, index, irq_block, irq_index);
-                            uint8_t irq_state = epio_peek_block_irq_num(epio, irq_block, irq_index);
+                            uint8_t irq_block = block;
+                            switch ((status_n >> 3) & 0b11) {
+                                case STATUS_N_IRQ_THIS:
+                                    break;
+
+                                case STATUS_N_IRQ_PREV:
+                                    irq_block = (block == 0) ? (NUM_PIO_BLOCKS - 1) : (block - 1);
+                                    break;
+
+                                case STATUS_N_IRQ_NEXT:
+                                    irq_block = (block + 1) % NUM_PIO_BLOCKS;
+                                    break;
+
+                                default:
+                                    assert(0 && "Invalid STATUS_N");
+                            }
+                            uint8_t irq_state = epio_peek_block_irq_num(epio, irq_block, status_n & 0b111);
                             mov_value = irq_state ? 0xFFFFFFFF : 0;
                             break;
                             
-                            // LCOV_EXCL_START
                         default:
                             assert(0 && "Invalid STATUS_SEL");
-                            break;
-                            // LCOV_EXCL_STOP
                     }
                     break;                    
                 case MOV_SRC_ISR:
@@ -647,12 +666,6 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                 case MOV_SRC_OSR:
                     mov_value = SM(block, sm).osr;
                     break;
-                    
-                    // LCOV_EXCL_START
-                default:
-                    assert(0 && "Invalid MOV source");
-                    break;
-                    // LCOV_EXCL_STOP
             }
             
             // Apply operation
@@ -674,12 +687,6 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                     }
                     mov_value = reversed;
                     break;
-                    
-                    // LCOV_EXCL_START
-                default:
-                    assert(0 && "Invalid MOV operation");
-                    break;
-                    // LCOV_EXCL_STOP
             }
             
             // Write to destination
@@ -687,7 +694,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                 case MOV_DEST_PINS:
                     ;
                     uint8_t out_base = OUT_BASE_GET(block, sm);
-                    uint8_t out_count = OUT_COUNT_GET(block, sm);
+                    uint8_t out_count = epio_out_count(epio, block, sm);
                     for (int ii = 0; ii < out_count; ii++) {
                         uint8_t pin = ((out_base + ii) % 32) + GPIOBASE(block);
                         if (epio_block_can_control_gpio_output(epio, block, pin)) {
@@ -707,7 +714,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                 case MOV_DEST_PINDIRS:
                     ;
                     uint8_t pindirs_base = OUT_BASE_GET(block, sm);
-                    uint8_t pindirs_count = OUT_COUNT_GET(block, sm);
+                    uint8_t pindirs_count = epio_out_count(epio, block, sm);
                     for (int ii = 0; ii < pindirs_count; ii++) {
                         uint8_t pin = ((pindirs_base + ii) % 32) + GPIOBASE(block);
                         if ((mov_value >> ii) & 0b1) {
@@ -715,7 +722,9 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                                 epio_set_gpio_output(epio, pin);
                             }
                         } else {
-                            epio_set_gpio_input(epio, pin);
+                            if (epio_block_can_control_gpio_output(epio, block, pin)) {
+                                epio_set_gpio_input(epio, pin);
+                            }
                         }
                     }
                     break;
@@ -740,13 +749,6 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                     SM(block, sm).osr = mov_value;
                     SM(block, sm).osr_count = 0;
                     break;
-                    
-                    // LCOV_EXCL_START
-                default:
-                    assert(0 && "Invalid MOV destination");
-                    break;
-                    // LCOV_EXCL_STOP
-
             }
             break;
 
@@ -798,7 +800,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                 case SET_DEST_PINS:
                     ;
                     uint8_t set_base = SET_BASE_GET(block, sm);
-                    uint8_t set_count = SET_COUNT_GET(block, sm);
+                    uint8_t set_count = epio_set_count(epio, block, sm);
                     for (int ii = 0; ii < set_count; ii++) {
                         uint8_t pin = ((set_base + ii) % 32) + GPIOBASE(block);
                         if (epio_block_can_control_gpio_output(epio, block, pin)) {
@@ -818,7 +820,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                 case SET_DEST_PIN_DIRS:
                     ;
                     uint8_t pindirs_base = SET_BASE_GET(block, sm);
-                    uint8_t pindirs_count = SET_COUNT_GET(block, sm);
+                    uint8_t pindirs_count = epio_set_count(epio, block, sm);
                     for (int ii = 0; ii < pindirs_count; ii++) {
                         uint8_t pin = ((pindirs_base + ii) % 32) + GPIOBASE(block);
                         if ((set_data >> ii) & 0b1) {
@@ -833,19 +835,10 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                     }
                     break;
                     
-                    // LCOV_EXCL_START
                 default:
                     assert(0 && "Invalid SET destination");
-                    break;
-                    // LCOV_EXCL_STOP
             }
             break;
-
-            // LCOV_EXCL_START
-        default:
-            assert(0 && "Invalid opcode");
-            break;
-            // LCOV_EXCL_STOP
     }
 
     if (process_new_delay) {

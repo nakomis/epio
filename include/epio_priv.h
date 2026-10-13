@@ -223,6 +223,17 @@ struct epio_t {
 
 // Function prototypes
 
+// epio.c and epio_sram.c
+#ifdef TEST_EPIO
+// calloc and aligned_alloc, called through pointers so a test can make
+// allocation fail
+extern void *(*epio_calloc)(size_t count, size_t size);
+extern void *(*epio_aligned_alloc)(size_t alignment, size_t size);
+#else
+#define epio_calloc         calloc
+#define epio_aligned_alloc  aligned_alloc
+#endif
+
 // epio_exec.c
 uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t instr);
 
@@ -231,7 +242,7 @@ uint8_t *epio_sram_init(epio_t *epio);
 void epio_sram_free(epio_t *epio);
 
 // epio_gpio.c
-uint8_t epio_get_jmp_pin_state(epio_t *epio, uint8_t block, uint8_t sm);
+uint8_t epio_get_jmp_pin_state(epio_t *epio, uint8_t block, uint8_t sm, uint8_t offset);
 
 // epio_dma.c
 void epio_init_dma(epio_t *epio);
@@ -274,7 +285,7 @@ void epio_dma_step(epio_t *epio);
 
 // EXECCTRL register fields
 #define JMP_PIN_GET(BLOCK, _SM) \
-    ((REG(BLOCK, _SM).execctrl >> 24) & 0x1F) + GPIOBASE(BLOCK)
+    ((REG(BLOCK, _SM).execctrl >> 24) & 0x1F)
 #define STATUS_SEL_GET(BLOCK, _SM) \
     ((REG(BLOCK, _SM).execctrl >> 5) & 0b11)
 #define STATUS_N_GET(BLOCK, _SM) \
@@ -290,7 +301,7 @@ void epio_dma_step(epio_t *epio);
 #define AUTOPUSH_GET(BLOCK, _SM) \
     ((REG(BLOCK, _SM).shiftctrl >> 16) & 0x1)
 #define IN_COUNT(BLOCK, _SM) \
-    ((REG(BLOCK, _SM).shiftctrl >> 0) & 0x1F)
+    _THRESH_CONVERT(((REG(BLOCK, _SM).shiftctrl >> 0) & 0x1F))
 #define IN_SHIFTDIR_R(BLOCK, _SM) \
     ((REG(BLOCK, _SM).shiftctrl >> 18) & 0x1)
 #define OUT_SHIFTDIR_R(BLOCK, _SM) \
@@ -305,13 +316,15 @@ void epio_dma_step(epio_t *epio);
 #define IN_BASE_GET(BLOCK, _SM) \
     ((REG(BLOCK, _SM).pinctrl >> 15) & 0x1F)
 #define OUT_COUNT_GET(BLOCK, _SM) \
-    ((REG(BLOCK, _SM).pinctrl >> 20) & 0x1F)
+    ((REG(BLOCK, _SM).pinctrl >> 20) & 0x3F)
 #define SET_COUNT_GET(BLOCK, _SM) \
-    ((REG(BLOCK, _SM).pinctrl >> 26) & 0x1F)
+    ((REG(BLOCK, _SM).pinctrl >> 26) & 0x7)
 #define SET_BASE_GET(BLOCK, _SM) \
     ((REG(BLOCK, _SM).pinctrl >> 5) & 0x1F)
 #define OUT_BASE_GET(BLOCK, _SM) \
     ((REG(BLOCK, _SM).pinctrl >> 0) & 0x1F)
+#define SIDESET_COUNT_GET(BLOCK, _SM) \
+    ((REG(BLOCK, _SM).pinctrl >> 29) & 0x7)
 
 // Macros to simplify PIO emulation
 #define NEW_INSTR(NEW_PC)   do { \
@@ -336,10 +349,6 @@ void epio_dma_step(epio_t *epio);
              \
         case IRQ_BLOCK_NEXT: \
             IRQ_BLOCK = (BLOCK + 1) % NUM_PIO_BLOCKS; \
-            break; \
-             \
-        default: \
-            assert(0 && "Invalid IRQ mode"); \
             break; \
     }
 
@@ -407,6 +416,12 @@ void epio_dma_step(epio_t *epio);
 #define IRQ_BLOCK_PREV      0b01
 #define IRQ_BLOCK_REL       0b10
 #define IRQ_BLOCK_NEXT      0b11
+
+// EXECCTRL STATUS_N bits 4:3 when STATUS_SEL is IRQ.  These differ from
+// IRQ_BLOCK_*.
+#define STATUS_N_IRQ_THIS   0b00
+#define STATUS_N_IRQ_PREV   0b01
+#define STATUS_N_IRQ_NEXT   0b10
 
 #define SET_DEST_PINS       0b000
 #define SET_DEST_X          0b001

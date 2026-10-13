@@ -941,6 +941,15 @@ static void test_update_from_apio_preserves_inflight_delay(void **state) {
     epio_free(epio);
 }
 
+// epio_from_apio() before APIO_ENABLE_PIOS() returns NULL
+static void test_from_apio_without_enable_pios(void **state) {
+    (void)state;
+    _apio_emulated_pio.pios_enabled = 0;
+    epio_t *epio = epio_from_apio();
+    APIO_ENABLE_PIOS();
+    assert_null(epio);
+}
+
 int main(void) {
     (void)disassembly_basic_pio_apio;
     const struct CMUnitTest tests[] = {
@@ -964,6 +973,7 @@ int main(void) {
         cmocka_unit_test(test_from_apio_resets_counts),
         cmocka_unit_test(test_from_apio_rx_fifo_preload),
         cmocka_unit_test(test_from_apio_output_gpio),
+        cmocka_unit_test(test_from_apio_without_enable_pios),
         // epio_update_from_apio
         cmocka_unit_test(test_update_from_apio_pre_instrs_update_x),
         cmocka_unit_test(test_update_from_apio_new_sm_configured),

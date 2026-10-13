@@ -139,6 +139,32 @@ static int setup_out_pc(void **state) {
     while (1) { APIO_ASM_WFI(); }
 }
 
+// OUT PC, 8 - shifts out more bits than the 5-bit PC holds
+static int setup_out_pc_8_bits(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_PULL_BLOCK);         // 0
+    APIO_ADD_INSTR(APIO_OUT_PC(8));           // 1
+    APIO_ADD_INSTR(APIO_SET_Y(30));           // 2 - should be skipped
+    APIO_ADD_INSTR(APIO_SET_X(17));           // 3 - jump target
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_NOP);                // 4
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(APIO_OUT_SHIFTDIR_R);
+    APIO_SM_PINCTRL_SET(0);
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
 // OUT ISR - writes shifted data into ISR, sets isr_count
 static int setup_out_isr(void **state) {
     (void)state;
@@ -606,6 +632,117 @@ static int setup_out_pins_wraps_around_gpiobase16(void **state) {
         APIO_OUT_BASE(30) |
         APIO_OUT_COUNT(3)
     );
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// OUT PINDIRS, 1 of a 0 bit to GPIO 5, which block 0 does NOT control
+static int setup_out_pindirs_without_control(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_GPIO_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_OUT_PINDIRS(1));
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_SET_X(20));
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(APIO_OUT_SHIFTDIR_R);
+    APIO_SM_PINCTRL_SET(
+        APIO_OUT_BASE(5) |
+        APIO_OUT_COUNT(1)
+    );
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// OUT PINDIRS, 1 of a 0 bit to GPIO 5, which block 0 controls
+static int setup_out_pindirs_with_control(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_GPIO_INIT();
+    APIO_GPIO_INPUT_OUTPUT(5, 0);
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_OUT_PINDIRS(1));
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_SET_X(20));
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(APIO_OUT_SHIFTDIR_R);
+    APIO_SM_PINCTRL_SET(
+        APIO_OUT_BASE(5) |
+        APIO_OUT_COUNT(1)
+    );
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// PULL, then the given OUT, with block 0 controlling GPIOs 0-3
+static int setup_out_after_pull(uint16_t out_instr, uint32_t pinctrl) {
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_GPIO_INIT();
+    for (int ii = 0; ii < 4; ii++) {
+        APIO_GPIO_INPUT_OUTPUT(ii, 0);
+    }
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_PULL_BLOCK);
+    APIO_ADD_INSTR(out_instr);
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_NOP);
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(APIO_OUT_SHIFTDIR_R);
+    APIO_SM_PINCTRL_SET(pinctrl);
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// Autopull at 32 bits - two NOPs, then OUT X, 32
+static int setup_out_autopull_between_outs(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_NOP);       // 0
+    APIO_ADD_INSTR(APIO_NOP);       // 1
+    APIO_ADD_INSTR(APIO_OUT_X(0));  // 2 - OUT X, 32
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_SET_Y(20)); // 3
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(
+        APIO_OUT_SHIFTDIR_R |
+        APIO_AUTOPULL |
+        APIO_PULL_THRESH(0)
+    );
+    APIO_SM_PINCTRL_SET(0);
     APIO_SM_JMP_TO_START();
     APIO_END_BLOCK();
     APIO_ENABLE_SMS(0, 1);

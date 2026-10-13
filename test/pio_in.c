@@ -673,6 +673,34 @@ static void in_pins_inverted_gpiobase16(void **state) {
     epio_free(epio);
 }
 
+static void in_pins_in_count(void **state) {
+    setup_in_pins_in_count(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+
+    epio_drive_gpios_ext(epio, 0xFF, 0xFF);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_isr(epio, 0, 0), 0x0F);
+    assert_int_equal(epio_peek_sm_isr_count(epio, 0, 0), 8);
+
+    epio_free(epio);
+}
+
+// IN sources 0b100 and 0b101 are reserved
+static void in_reserved_source(void **state) {
+    (void)state;
+    for (uint16_t source = 0b100; source <= 0b101; source++) {
+        setup_in_instr(APIO_IN_PINS(8) | (source << 5));
+        epio_t *epio = epio_from_apio();
+        assert_non_null(epio);
+
+        expect_assert_failure(epio_step_cycles(epio, 1));
+
+        epio_free(epio);
+    }
+}
+
 int main(void) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(in_pins_shift_left),
@@ -699,6 +727,8 @@ int main(void) {
         cmocka_unit_test(in_pins_inverted_high),
         cmocka_unit_test(in_pins_multiple_inverted),
         cmocka_unit_test(in_pins_inverted_gpiobase16),
+        cmocka_unit_test(in_reserved_source),
+        cmocka_unit_test(in_pins_in_count),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

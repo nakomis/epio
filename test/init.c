@@ -7,6 +7,7 @@
 // Unit tests for init and related functions from epio.c
 
 #define APIO_LOG_IMPL
+#include <stdlib.h>
 #include "test.h"
 
 static void init_returns_valid_instance(void **state) {
@@ -159,6 +160,44 @@ static void set_sm_debug_invalid(void **state) {
     epio_free(epio);
 }
 
+static void *calloc_fails(size_t count, size_t size) {
+    (void)count;
+    (void)size;
+    return NULL;
+}
+
+static void *aligned_alloc_fails(size_t alignment, size_t size) {
+    (void)alignment;
+    (void)size;
+    return NULL;
+}
+
+static int restore_allocators(void **state) {
+    (void)state;
+    epio_calloc = calloc;
+    epio_aligned_alloc = aligned_alloc;
+    return 0;
+}
+
+static void init_instance_alloc_fails(void **state) {
+    (void)state;
+    epio_calloc = calloc_fails;
+    assert_null(epio_init());
+}
+
+static void init_sram_alloc_fails(void **state) {
+    (void)state;
+    epio_aligned_alloc = aligned_alloc_fails;
+    assert_null(epio_init());
+}
+
+static void from_apio_alloc_fails(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    epio_calloc = calloc_fails;
+    assert_null(epio_from_apio());
+}
+
 int main(void) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(init_returns_valid_instance),
@@ -170,6 +209,9 @@ int main(void) {
         cmocka_unit_test(set_sm_debug_invalid),
         cmocka_unit_test(sm_reg_null),
         cmocka_unit_test(block_sm_invalid),
+        cmocka_unit_test_teardown(init_instance_alloc_fails, restore_allocators),
+        cmocka_unit_test_teardown(init_sram_alloc_fails, restore_allocators),
+        cmocka_unit_test_teardown(from_apio_alloc_fails, restore_allocators),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

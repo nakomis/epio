@@ -237,19 +237,13 @@ static void apply_apio_state(epio_t *epio) {
 }
 
 epio_t *epio_from_apio(void) {
-    epio_t *epio = epio_init();
-    if (epio == NULL) {
-        // LCOV_EXCL_START
+    if (_apio_emulated_pio.pios_enabled != 1) {
         return NULL;
-        // LCOV_EXCL_STOP
     }
 
-    if (_apio_emulated_pio.pios_enabled != 1) {
-        // LCOV_EXCL_START
-        assert(0 &&
-        "APIO_ENABLE_PIOS() must be called before using PIO blocks");
+    epio_t *epio = epio_init();
+    if (epio == NULL) {
         return NULL;
-        // LCOV_EXCL_STOP
     }
 
     apply_apio_state(epio);

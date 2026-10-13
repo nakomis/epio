@@ -621,3 +621,47 @@ static int setup_in_pins_inverted_gpiobase16(void **state) {
     
     while (1) { APIO_ASM_WFI(); }
 }
+
+// A single IN instruction, for source encodings the assembler has no macro for
+static int setup_in_instr(uint16_t instr) {
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(instr);
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(0);
+    APIO_SM_PINCTRL_SET(0);
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// IN PINS, 8 with IN_COUNT 4 - the top 4 bits are masked to 0
+static int setup_in_pins_in_count(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_IN_PINS(8));
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_SET_X(20));
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(APIO_IN_SHIFTDIR_L | APIO_IN_COUNT(4));
+    APIO_SM_PINCTRL_SET(APIO_IN_BASE(0));
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}

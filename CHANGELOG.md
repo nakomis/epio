@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.2.2 - 2026-10-13
+
+Fixed:
+
+- `JMP X--` and `JMP Y--` test all 32 bits of the register.  They used to test
+  the low 8 bits so a loop count of 256 or more ended early.
+- `JMP !OSRE` jumps when the OSR is not empty.  It used to jump when the OSR was
+  empty.
+- `MOV x, STATUS` with `STATUS_SEL` IRQ reads the next PIO block's flag for
+  `STATUS_N` 0x10-0x17.  It used to read a flag in this block instead.  epio now
+  asserts on 0x18-0x1F, which the datasheet doesn't define.
+- `OUT PC` jumps to the low 5 bits of the value it shifts out.  A value above 31
+  used to jump outside instruction memory.
+- The PC steps from address 31 to 0 when 31 isn't the wrap top.  It used to step
+  outside instruction memory.
+- `WAIT JMPPIN` adds its index to `JMP_PIN`, wrapping at 32.  It used to ignore
+  the index.  epio now asserts on an index of 4 or more, which the datasheet
+  reserves.
+- `WAIT PIN` adds its index to `IN_BASE`, wrapping at 32.  It used to read past
+  pin 31 instead.
+- `OUT PINDIRS` and `MOV PINDIRS` change only the directions of pins the block
+  controls, as `SET PINDIRS` does.  A 0 bit used to make any mapped pin an
+  input.
+- `SET PINS` and `SET PINDIRS` write `SET_COUNT` pins.  `SIDESET_COUNT` used to
+  leak into the count.
+- `MOV PINS` and `MOV PINDIRS` write 32 pins when `OUT_COUNT` is 32.  They used
+  to write none.
+- A delay excludes the bits `SIDESET_COUNT` reserves for side-set.  A program
+  using side-set used to wait extra cycles.  Side-set itself isn't emulated.
+- `MOV x, PINS` reads all 32 pins when `IN_COUNT` is 0.  It used to read none.
+- `IN PINS` and `WAIT PIN` read pins at and above `IN_COUNT` as 0, as
+  `MOV x, PINS` does.  They used to ignore `IN_COUNT`.
+- `OUT PINS` and `OUT PINDIRS` write `OUT_COUNT` pins, with 0 beyond the bits
+  shifted out.  They used to write one pin per bit shifted out.
+- Autopull refills an empty OSR on any cycle, not only at the next `OUT`, and an
+  `OUT` that finds the OSR empty stalls while it refills.  An `OUT` waiting for
+  data used to run a cycle early.
+- epio asserts on an `OUT_COUNT` above 32, or a `SET_COUNT` or `SIDESET_COUNT`
+  above 5, which the datasheet doesn't allow.
+- `epio_from_apio()` returns NULL when `APIO_ENABLE_PIOS()` hasn't been called.
+  It used to assert first.
+
 ## v0.2.1 - 2026-08-20
 
 Requires `apio` **v0.3.0** or later.  `apio` v0.3.0 makes `APIO_RXF` a read on

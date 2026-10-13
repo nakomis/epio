@@ -215,9 +215,12 @@ cov-html: test
 	@echo "Coverage report generated at build/epio_coverage_html/index.html"
 	@open build/epio_coverage_html/index.html
 
+# Ubuntu's gcc inlines glibc header code through _FORTIFY_SOURCE.  --include
+# keeps those headers out of the capture so lcov --list prints paths relative
+# to the repository for the src/ filter.
 cov: test
 	@lcov -version
-	@lcov --capture --directory build --output-file build/epio_coverage.info
+	@lcov --capture --directory build --include "$(CURDIR)/*" --output-file build/epio_coverage.info
 	@lcov --list build/epio_coverage.info | grep -E '^src/' || (echo "No coverage data for src/ files!" && exit 1)
 	@lcov --list build/epio_coverage.info | awk -F'|' '/^src\// && $$2 !~ /100%/ {print; exit 1}'
 

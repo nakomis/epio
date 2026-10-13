@@ -139,6 +139,30 @@ static void out_pc(void **state) {
     epio_free(epio);
 }
 
+static void out_pc_masks_to_5_bits(void **state) {
+    setup_out_pc_8_bits(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    // 0x23 is address 3 with bit 5 set
+    epio_push_tx_fifo(epio, 0, 0, 0x00000023);
+
+    // Cycle 1: PULL
+    epio_step_cycles(epio, 1);
+
+    // Cycle 2: OUT PC, 8 → jumps to address 3
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 3);
+
+    // Cycle 3: SET X, 17 at address 3
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), 17);
+
+    epio_free(epio);
+}
+
 static void out_isr(void **state) {
     setup_out_isr(state);
     epio_t *epio = epio_from_apio();
@@ -265,6 +289,9 @@ static void out_autopull(void **state) {
     // Autopull fires: OSR refilled from 0x12345678, osr_count = 0
     epio_step_cycles(epio, 1);
     assert_int_equal(epio_peek_sm_x(epio, 0, 0), 0xEF);
+    assert_int_equal(epio_peek_sm_osr(epio, 0, 0), 0x12345678);
+    assert_int_equal(epio_peek_sm_osr_count(epio, 0, 0), 0);
+    assert_int_equal(epio_tx_fifo_depth(epio, 0, 0), 0);
 
     // Cycle 3: OUT Y, 8 → Y = low 8 of 0x12345678 = 0x78
     epio_step_cycles(epio, 1);
@@ -305,7 +332,14 @@ static void out_autopull_stall(void **state) {
     // Push data to unblock
     epio_push_tx_fifo(epio, 0, 0, 0x12345678);
 
-    // Unstalls: autopull succeeds, OUT Y executes
+    // Autopull refills the OSR, but OUT Y can't shift it out on the same
+    // cycle so it stays stalled
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 1);
+    assert_int_equal(epio_peek_sm_osr_count(epio, 0, 0), 0);
+    assert_int_equal(epio_peek_sm_y(epio, 0, 0), 0);
+
+    // OUT Y executes
     epio_step_cycles(epio, 1);
     assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 0);
     assert_int_equal(epio_peek_sm_y(epio, 0, 0), 0x78);
@@ -650,6 +684,113 @@ static void out_pins_wraps_around_gpiobase16(void **state) {
     epio_free(epio);
 }
 
+static void out_pindirs_without_control(void **state) {
+    setup_out_pindirs_without_control(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    epio_set_gpio_output(epio, 5);
+
+    // Cycle 1: OUT PINDIRS, 1 shifts out a 0 from the empty OSR.  Block 0
+    // doesn't control GPIO 5 so it stays an output
+    epio_step_cycles(epio, 1);
+    assert_int_equal((epio_read_driven_pins(epio) >> 5) & 1, 1);
+
+    epio_free(epio);
+}
+
+static void out_pindirs_with_control(void **state) {
+    setup_out_pindirs_with_control(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    epio_set_gpio_output(epio, 5);
+
+    // Cycle 1: OUT PINDIRS, 1 shifts out a 0 from the empty OSR.  Block 0
+    // controls GPIO 5 so it becomes an input
+    epio_step_cycles(epio, 1);
+    assert_int_equal((epio_read_driven_pins(epio) >> 5) & 1, 0);
+
+    epio_free(epio);
+}
+
+static void out_pins_out_count(void **state) {
+    (void)state;
+    setup_out_after_pull(APIO_OUT_PINS(2), APIO_OUT_BASE(0) | APIO_OUT_COUNT(4));
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+
+    for (int ii = 0; ii < 4; ii++) {
+        epio_set_gpio_output(epio, ii);
+        epio_set_gpio_output_level(epio, ii, 1);
+    }
+    epio_push_tx_fifo(epio, 0, 0, 0x00000001);
+
+    // Cycle 2: OUT PINS, 2 writes OUT_COUNT pins, zero beyond the 2 data bits
+    epio_step_cycles(epio, 2);
+    assert_int_equal(epio_read_pin_states(epio) & 0xF, 0x1);
+
+    epio_free(epio);
+}
+
+static void out_pindirs_out_count(void **state) {
+    (void)state;
+    setup_out_after_pull(APIO_OUT_PINDIRS(4), APIO_OUT_BASE(0) | APIO_OUT_COUNT(2));
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+
+    epio_push_tx_fifo(epio, 0, 0, 0x0000000F);
+
+    // Cycle 2: OUT PINDIRS, 4 writes only the OUT_COUNT pins
+    epio_step_cycles(epio, 2);
+    assert_int_equal(epio_read_driven_pins(epio) & 0xF, 0x3);
+
+    epio_free(epio);
+}
+
+// OUT_COUNT is 0 to 32
+static void out_count_invalid(void **state) {
+    (void)state;
+    setup_out_after_pull(APIO_OUT_PINS(1), APIO_OUT_COUNT(33));
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+
+    epio_push_tx_fifo(epio, 0, 0, 0x00000001);
+    epio_step_cycles(epio, 1);
+    expect_assert_failure(epio_step_cycles(epio, 1));
+
+    epio_free(epio);
+}
+
+static void out_autopull_between_outs(void **state) {
+    setup_out_autopull_between_outs(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    // Cycle 1: NOP, with the OSR empty and nothing to refill it from
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_osr_count(epio, 0, 0), 32);
+
+    // Cycle 2: NOP.  Autopull refills the OSR on a cycle without an OUT
+    epio_push_tx_fifo(epio, 0, 0, 0xCAFEF00D);
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_osr_count(epio, 0, 0), 0);
+    assert_int_equal(epio_tx_fifo_depth(epio, 0, 0), 0);
+
+    // Cycle 3: OUT X, 32 from the refilled OSR, without stalling
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), 0xCAFEF00D);
+    assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 0);
+
+    epio_free(epio);
+}
+
 int main(void) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(out_x_shift_right),
@@ -657,6 +798,7 @@ int main(void) {
         cmocka_unit_test(out_null_shift_right),
         cmocka_unit_test(out_pins_shift_right),
         cmocka_unit_test(out_pc),
+        cmocka_unit_test(out_pc_masks_to_5_bits),
         cmocka_unit_test(out_isr),
         cmocka_unit_test(out_exec),
         cmocka_unit_test(out_x_shift_left),
@@ -671,6 +813,12 @@ int main(void) {
         cmocka_unit_test(out_autopull_threshold_crossing),
         cmocka_unit_test(out_autopull_thresh_0_means_32),
         cmocka_unit_test(out_pindirs_shift_right),
+        cmocka_unit_test(out_pindirs_without_control),
+        cmocka_unit_test(out_pindirs_with_control),
+        cmocka_unit_test(out_pins_out_count),
+        cmocka_unit_test(out_pindirs_out_count),
+        cmocka_unit_test(out_count_invalid),
+        cmocka_unit_test(out_autopull_between_outs),
         cmocka_unit_test(out_exec_with_executee_delay),
         cmocka_unit_test(drive_gpios_ext_overwrites_input_level),
         cmocka_unit_test(out_pins_wraps_around),

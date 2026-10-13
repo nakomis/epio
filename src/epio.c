@@ -82,12 +82,14 @@ static void epio_init_block(epio_t *epio, uint8_t block) {
     }
 }
 
+#ifdef TEST_EPIO
+void *(*epio_calloc)(size_t count, size_t size) = calloc;
+#endif
+
 epio_t *epio_init(void) {
-    epio_t *epio = (epio_t *)calloc(1, sizeof(epio_t));
+    epio_t *epio = (epio_t *)epio_calloc(1, sizeof(epio_t));
     if (epio == NULL) {
-        // LCOV_EXCL_START
         return NULL;
-        // LCOV_EXCL_STOP
     }
 
     // calloc zeroes everything; EPIO_FLOAT_HIGH = 1 so must be set explicitly
@@ -95,10 +97,8 @@ epio_t *epio_init(void) {
 
     epio_sram_init(epio);
     if (epio->sram == NULL) {
-        // LCOV_EXCL_START
         free(epio);
         return NULL;
-        // LCOV_EXCL_STOP
     }
 
     epio_init_gpios(epio);

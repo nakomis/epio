@@ -23,27 +23,13 @@ static void epio_set_gpio_input_level_internal(epio_t *epio, uint8_t pin, uint8_
 // Internal helper: return the float value for an undriven PULL_NONE pin,
 // advancing the PRNG state if in random mode.
 static uint8_t epio_get_float_value(epio_t *epio) {
-    switch (epio->float_mode) {
-        // LCOV_EXCL_START
-        // GCC optimises FLOAT_LOW (0) and FLOAT_HIGH (1) into a single
-        // range-check + return-by-value, so GCOV attributes hits to the
-        // switch line rather than to these individual returns.  All three
-        // paths are exercised; see Mac coverage for confirmation.
-        case EPIO_FLOAT_LOW:
-            return 0;
-        case EPIO_FLOAT_HIGH:
-            return 1;
-        // LCOV_EXCL_STOP
-        case EPIO_FLOAT_RANDOM:
-        default:
-            // Numerical Recipes LCG; extract bit 16 for reasonable distribution
-            epio->float_seed = epio->float_seed * 1664525u + 1013904223u;
-            // LCOV_EXCL_START
-            // GCC fuses the LCG update and this return into one sequence;
-            // hits are attributed to the line above on Linux.
-            return (epio->float_seed >> 16) & 1u;
-            // LCOV_EXCL_STOP
+    if (epio->float_mode != EPIO_FLOAT_RANDOM) {
+        return epio->float_mode == EPIO_FLOAT_HIGH;
     }
+
+    // Numerical Recipes LCG, taking bit 16 for a reasonable distribution
+    epio->float_seed = epio->float_seed * 1664525u + 1013904223u;
+    return (epio->float_seed >> 16) & 1u;
 }
 
 // Internal helper: determine the undriven level for a pin based on its pull
@@ -204,8 +190,8 @@ void epio_set_gpio_output_level(epio_t *epio, uint8_t pin, uint8_t level) {
     }
 }
 
-uint8_t epio_get_jmp_pin_state(epio_t *epio, uint8_t block, uint8_t sm) {
-    uint8_t jmp_pin = JMP_PIN_GET(block, sm);
+uint8_t epio_get_jmp_pin_state(epio_t *epio, uint8_t block, uint8_t sm, uint8_t offset) {
+    uint8_t jmp_pin = ((JMP_PIN_GET(block, sm) + offset) % 32) + GPIOBASE(block);
     CHECK_GPIO(jmp_pin);
     return epio_get_gpio_input(epio, jmp_pin);
 }

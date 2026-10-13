@@ -18,15 +18,17 @@
 // against the fixed, highly-aligned SRAM base on real hardware.
 #define SRAM_ALIGN 32768u
 
+#ifdef TEST_EPIO
+void *(*epio_aligned_alloc)(size_t alignment, size_t size) = aligned_alloc;
+#endif
+
 // Internal: allocate and zero-initialise the emulated SRAM buffer.
 uint8_t *epio_sram_init(epio_t *epio) {
     size_t alloc_size = ((SRAM_SIZE + (SRAM_ALIGN - 1u)) / SRAM_ALIGN) * SRAM_ALIGN;
-    epio->sram = (uint8_t *)aligned_alloc(SRAM_ALIGN, alloc_size);
-    // LCOV_EXCL_START
+    epio->sram = (uint8_t *)epio_aligned_alloc(SRAM_ALIGN, alloc_size);
     if (epio->sram == NULL) {
         return NULL;
     }
-    // LCOV_EXCL_STOP
     memset(epio->sram, 0, alloc_size);
     return epio->sram;
 }

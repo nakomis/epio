@@ -668,3 +668,74 @@ static int setup_wait_pin_high_gpiobase16(void **state) {
     
     while (1) { APIO_ASM_WFI(); }
 }
+
+// WAIT 1 JMPPIN + offset, with EXECCTRL_JMP_PIN set to jmp_pin
+static int setup_wait_jmp_pin_offset(uint8_t jmp_pin, uint8_t offset, int gpiobase16) {
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    if (gpiobase16) {
+        APIO_GPIOBASE_16();
+    }
+
+    APIO_SET_SM(0);
+    APIO_ADD_INSTR(APIO_WAIT_JMP_PIN_HIGH() | offset);
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_SET_X(20));
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(APIO_EXECCTRL_JMP_PIN(jmp_pin));
+    APIO_SM_SHIFTCTRL_SET(0);
+    APIO_SM_PINCTRL_SET(0);
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// WAIT 1 PIN 5 with IN_BASE 30 - should wait on GPIO 3, wrapping at 32
+static int setup_wait_pin_wraps(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_WAIT_PIN_HIGH(5));
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_SET_X(20));
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(0);
+    APIO_SM_PINCTRL_SET(APIO_IN_BASE(30));
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// WAIT 1 PIN 5 with IN_COUNT 4 - pin 5 reads as 0
+static int setup_wait_pin_in_count(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_WAIT_PIN_HIGH(5));
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_SET_X(20));
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(APIO_IN_COUNT(4));
+    APIO_SM_PINCTRL_SET(APIO_IN_BASE(0));
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}

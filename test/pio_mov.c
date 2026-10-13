@@ -8,7 +8,8 @@
 //
 // Systematically tests all destination × source × operation combinations:
 //   8 destinations × 6 sources × 3 operations = 144 tests
-// Plus targeted tests for delay, GPIOBASE, and count reset behaviour.
+// Plus targeted tests for delay, GPIOBASE, count reset, STATUS selection, and
+// pin control and count behaviour.
 
 #define APIO_LOG_IMPL
 #include "test.h"
@@ -758,7 +759,8 @@ MOV_EXEC_STATUS_TEST(mov_exec_irq0_inv,  APIO_MOV_SRC_INVERT(APIO_MOV_EXEC_STATU
 MOV_EXEC_STATUS_TEST(mov_exec_irq0_rev,  APIO_MOV_SRC_REVERSE(APIO_MOV_EXEC_STATUS),   STATUS_IRQ_ZEROS, -1, SV0_REV)
 
 // ============================================================
-// Targeted tests — delay, GPIOBASE, count reset
+// Targeted tests — delay, GPIOBASE, count reset, STATUS selection, pin control
+// and count
 // ============================================================
 
 // MOV X, Y with delay [3]: delay should be honoured on non-EXEC MOV
@@ -908,6 +910,136 @@ static void mov_osr_osr_count_reset(void **state) {
     epio_step_cycles(epio, 1);
     assert_int_equal(epio_peek_sm_osr(epio, 0, 0), 0x00DEADBE);
     assert_int_equal(epio_peek_sm_osr_count(epio, 0, 0), 0);
+
+    epio_free(epio);
+}
+
+// MOV X, STATUS with STATUS_N IRQ_PREVPIO: PIO0 reads PIO2's IRQ flag
+static void mov_x_status_irq_prevpio(void **state) {
+    (void)state;
+    setup_mov_status(APIO_MOV_X_STATUS,
+                     APIO_STATUS_SEL_IRQ | APIO_STATUS_N(APIO_STATUS_N_IRQ_PREVPIO | 1),
+                     0);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    epio_set_block_irq(epio, 2, 1);
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), SV1);
+
+    epio_free(epio);
+}
+
+// MOV X, STATUS with STATUS_N IRQ_NEXTPIO: PIO0 reads PIO1's IRQ flag
+static void mov_x_status_irq_nextpio(void **state) {
+    (void)state;
+    setup_mov_status(APIO_MOV_X_STATUS,
+                     APIO_STATUS_SEL_IRQ | APIO_STATUS_N(APIO_STATUS_N_IRQ_NEXTPIO | 2),
+                     0);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    epio_set_block_irq(epio, 1, 2);
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), SV1);
+
+    epio_free(epio);
+}
+
+// MOV X, STATUS with STATUS_N 0x18: not a valid IRQ selection so asserts
+static void mov_x_status_irq_invalid(void **state) {
+    (void)state;
+    setup_mov_status(APIO_MOV_X_STATUS,
+                     APIO_STATUS_SEL_IRQ | APIO_STATUS_N(0x18),
+                     0);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    expect_assert_failure(epio_step_cycles(epio, 1));
+
+    epio_free(epio);
+}
+
+// MOV X, STATUS with STATUS_SEL 0b11: not a valid selection so asserts
+static void mov_x_status_sel_invalid(void **state) {
+    (void)state;
+    setup_mov_status(APIO_MOV_X_STATUS, 0b11 << 5, 0);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    expect_assert_failure(epio_step_cycles(epio, 1));
+
+    epio_free(epio);
+}
+
+// MOV PINDIRS, NULL: block 0 doesn't control GPIO 5 so it stays an output
+static void mov_pindirs_without_control(void **state) {
+    setup_mov_pindirs_without_control(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    epio_set_gpio_output(epio, 5);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal((epio_read_driven_pins(epio) >> 5) & 1, 1);
+
+    epio_free(epio);
+}
+
+// MOV PINDIRS, NULL: block 0 controls GPIO 5 so it becomes an input
+static void mov_pindirs_with_control(void **state) {
+    setup_mov_pindirs_with_control(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    epio_set_gpio_output(epio, 5);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal((epio_read_driven_pins(epio) >> 5) & 1, 0);
+
+    epio_free(epio);
+}
+
+// MOV PINS, !NULL with OUT_COUNT 32 drives GPIO 31, the 32nd pin, high
+static void mov_pins_out_count_32(void **state) {
+    setup_mov_pins_out_count_32(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    epio_set_gpio_output(epio, 31);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal((epio_read_pin_states(epio) >> 31) & 1, 1);
+
+    epio_free(epio);
+}
+
+// MOV X, PINS with IN_COUNT 0 reads all 32 pins, GPIO 31 included
+static void mov_x_pins_in_count_32(void **state) {
+    setup_mov_x_pins_in_count_32(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    epio_drive_gpios_ext(epio, 1ULL << 31, 1ULL << 31);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), 0x80000000);
 
     epio_free(epio);
 }
@@ -1234,12 +1366,20 @@ int main(void) {
         cmocka_unit_test(mov_exec_irq0_inv),
         cmocka_unit_test(mov_exec_irq0_rev),
 
-        // Targeted tests (5)
+        // Targeted tests (13)
         cmocka_unit_test(mov_with_delay),
         cmocka_unit_test(mov_exec_delay_ignored),
         cmocka_unit_test(mov_exec_executee_delay),
         cmocka_unit_test(mov_pins_gpiobase16),
         cmocka_unit_test(mov_osr_osr_count_reset),
+        cmocka_unit_test(mov_x_status_irq_prevpio),
+        cmocka_unit_test(mov_x_status_irq_nextpio),
+        cmocka_unit_test(mov_x_status_irq_invalid),
+        cmocka_unit_test(mov_x_status_sel_invalid),
+        cmocka_unit_test(mov_pindirs_without_control),
+        cmocka_unit_test(mov_pindirs_with_control),
+        cmocka_unit_test(mov_pins_out_count_32),
+        cmocka_unit_test(mov_x_pins_in_count_32),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

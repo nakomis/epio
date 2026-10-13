@@ -358,17 +358,16 @@ static void pull_autopull_noop_when_full(void **state) {
     assert_int_equal(epio_peek_sm_osr_count(epio, 0, 0), 0);
     assert_int_equal(epio_tx_fifo_depth(epio, 0, 0), 1);
 
-    // Cycle 3: OUT X, 32 — from original OSR
+    // Cycle 3: OUT X, 32 — from original OSR.  Emptying the OSR refills it
+    // with the second value
     epio_step_cycles(epio, 1);
     assert_int_equal(epio_peek_sm_x(epio, 0, 0), 0xDEADBEEF);
+    assert_int_equal(epio_peek_sm_osr(epio, 0, 0), 0x12345678);
+    assert_int_equal(epio_tx_fifo_depth(epio, 0, 0), 0);
 
     // Cycle 4: sentinel
     epio_step_cycles(epio, 1);
     assert_int_equal(epio_peek_sm_y(epio, 0, 0), 20);
-
-    // Second value still in TX FIFO
-    assert_int_equal(epio_tx_fifo_depth(epio, 0, 0), 1);
-    assert_int_equal(epio_pop_tx_fifo(epio, 0, 0), 0x12345678);
 
     epio_free(epio);
 }

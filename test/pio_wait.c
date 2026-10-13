@@ -680,6 +680,106 @@ static void wait_pin_high_gpiobase16(void **state) {
     epio_free(epio);
 }
 
+static void wait_jmp_pin_offset(void **state) {
+    (void)state;
+    setup_wait_jmp_pin_offset(5, 2, 0);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    // JMPPIN + 2 with JMP_PIN 5 is GPIO 7 so GPIO 5 high doesn't satisfy it
+    epio_drive_gpios_ext(epio, 1ULL << 5 | 1ULL << 7, 1ULL << 5);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 1);
+
+    epio_drive_gpios_ext(epio, 1ULL << 5 | 1ULL << 7, 1ULL << 7);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 0);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 1);
+
+    epio_free(epio);
+}
+
+static void wait_jmp_pin_offset_wraps_gpiobase16(void **state) {
+    (void)state;
+    setup_wait_jmp_pin_offset(31, 1, 1);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    // JMPPIN + 1 with JMP_PIN 31 wraps to 0 before GPIOBASE so is GPIO 16, and
+    // GPIO 47 high doesn't satisfy it
+    epio_drive_gpios_ext(epio, 1ULL << 16 | 1ULL << 47, 1ULL << 47);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 1);
+
+    epio_drive_gpios_ext(epio, 1ULL << 16 | 1ULL << 47, 1ULL << 16);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 0);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 1);
+
+    epio_free(epio);
+}
+
+static void wait_pin_wraps(void **state) {
+    setup_wait_pin_wraps(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    // PIN 5 with IN_BASE 30 wraps to GPIO 3 so GPIO 35 high doesn't satisfy it
+    epio_drive_gpios_ext(epio, 1ULL << 3 | 1ULL << 35, 1ULL << 35);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 1);
+
+    epio_drive_gpios_ext(epio, 1ULL << 3 | 1ULL << 35, 1ULL << 3);
+
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 0);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 1);
+
+    epio_free(epio);
+}
+
+static void wait_pin_in_count(void **state) {
+    setup_wait_pin_in_count(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    // IN_COUNT 4 masks pin 5 to 0 so GPIO 5 high doesn't satisfy it
+    epio_drive_gpios_ext(epio, 1ULL << 5, 1ULL << 5);
+
+    epio_step_cycles(epio, 2);
+    assert_int_equal(epio_peek_sm_stalled(epio, 0, 0), 1);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 0);
+
+    epio_free(epio);
+}
+
+// JMPPIN indexes 4-31 are reserved
+static void wait_jmp_pin_reserved_index(void **state) {
+    (void)state;
+    setup_wait_jmp_pin_offset(5, 4, 0);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+    int32_t len = epio_disassemble_sm(epio, 0, 0, dis_buf, DIS_BUF_SIZE);
+    assert_true(len > 0 && "Disassembly failed");
+
+    expect_assert_failure(epio_step_cycles(epio, 1));
+
+    epio_free(epio);
+}
+
 int main(void) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(wait_gpio_high),
@@ -705,6 +805,11 @@ int main(void) {
         cmocka_unit_test(wait_irq_relative_wrap),
         cmocka_unit_test(wait_gpio_high_gpiobase16),
         cmocka_unit_test(wait_pin_high_gpiobase16),
+        cmocka_unit_test(wait_jmp_pin_offset),
+        cmocka_unit_test(wait_jmp_pin_offset_wraps_gpiobase16),
+        cmocka_unit_test(wait_jmp_pin_reserved_index),
+        cmocka_unit_test(wait_pin_wraps),
+        cmocka_unit_test(wait_pin_in_count),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

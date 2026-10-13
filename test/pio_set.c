@@ -326,6 +326,77 @@ static void set_pins_block1(void **state) {
     epio_free(epio);
 }
 
+// SET destinations 0b011 and 0b101-0b111 are reserved
+static void set_reserved_destination(void **state) {
+    (void)state;
+    const uint16_t reserved[] = {0b011, 0b101, 0b110, 0b111};
+    for (size_t ii = 0; ii < sizeof(reserved) / sizeof(reserved[0]); ii++) {
+        setup_set_instr(APIO_SET_PINS(1) | (reserved[ii] << 5));
+        epio_t *epio = epio_from_apio();
+        assert_non_null(epio);
+
+        expect_assert_failure(epio_step_cycles(epio, 1));
+
+        epio_free(epio);
+    }
+}
+
+static void set_with_delay_and_side_set(void **state) {
+    setup_set_with_delay_and_side_set(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+
+    // Cycle 1: SET X, 17 side 0b11 [3] — X written, only the 3 delay bits loaded
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_x(epio, 0, 0), 17);
+    assert_int_equal(epio_peek_sm_pc(epio, 0, 0), 1);
+    assert_int_equal(epio_peek_sm_delay(epio, 0, 0), 3);
+
+    // Cycles 2-4: delay burning
+    epio_step_cycles(epio, 3);
+    assert_int_equal(epio_peek_sm_delay(epio, 0, 0), 0);
+
+    // Cycle 5: sentinel
+    epio_step_cycles(epio, 1);
+    assert_int_equal(epio_peek_sm_y(epio, 0, 0), 20);
+
+    epio_free(epio);
+}
+
+static void set_pins_count_with_side_set(void **state) {
+    setup_set_pins_count_with_side_set(state);
+    epio_t *epio = epio_from_apio();
+    assert_non_null(epio);
+
+    epio_set_gpio_output(epio, 5);
+    epio_set_gpio_output(epio, 6);
+
+    // Cycle 1: SET PINS, 3 with SET_COUNT 1 → only GPIO 5 is written
+    epio_step_cycles(epio, 1);
+    uint64_t pins = epio_read_pin_states(epio);
+    assert_int_equal((pins >> 5) & 0x3, 0x1);
+
+    epio_free(epio);
+}
+
+// SET_COUNT and SIDESET_COUNT are each 0 to 5
+static void pinctrl_counts_invalid(void **state) {
+    (void)state;
+    const uint32_t pinctrls[] = {APIO_SET_COUNT(6), APIO_SIDE_SET_COUNT(6)};
+    for (size_t ii = 0; ii < sizeof(pinctrls) / sizeof(pinctrls[0]); ii++) {
+        epio_t *epio = epio_init();
+        assert_non_null(epio);
+        epio_sm_reg_t reg = { .pinctrl = pinctrls[ii] };
+        epio_set_sm_reg(epio, 0, 0, &reg);
+        epio_set_instr(epio, 0, 0, APIO_SET_PINS(1));
+        epio_enable_sm(epio, 0, 0);
+
+        expect_assert_failure(epio_step_cycles(epio, 1));
+
+        epio_free(epio);
+    }
+}
+
 int main(void) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(set_x),
@@ -337,12 +408,16 @@ int main(void) {
         cmocka_unit_test(set_pindirs),
         cmocka_unit_test(set_pins_gpiobase16),
         cmocka_unit_test(set_with_delay),
+        cmocka_unit_test(set_with_delay_and_side_set),
+        cmocka_unit_test(set_pins_count_with_side_set),
+        cmocka_unit_test(pinctrl_counts_invalid),
         cmocka_unit_test(set_pins_wraps_around),
         cmocka_unit_test(set_pins_wraps_around_gpiobase16),
         cmocka_unit_test(set_pindirs_gpiobase16),
         cmocka_unit_test(set_pins_with_control),
         cmocka_unit_test(set_pins_without_control),
         cmocka_unit_test(set_pins_block1),
+        cmocka_unit_test(set_reserved_destination),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

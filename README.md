@@ -78,13 +78,13 @@ See [the GitHub repo](https://github.com/piersfinlayson/epio).
 `main` is not a release branch, and may take breaking changes at any time.  Pin your project to a tag:
 
 ```bash
-git clone --depth 1 --branch v0.2.1 https://github.com/piersfinlayson/epio.git
+git clone --depth 1 --branch v0.2.2 https://github.com/piersfinlayson/epio.git
 ```
 
 If your project clones `epio` from a `Makefile`, keep the version in a variable, so it is visible and easy to bump:
 
 ```make
-EPIO_VERSION ?= v0.2.1
+EPIO_VERSION ?= v0.2.2
 
 epio:
 	@if [ ! -d "$@" ]; then \
@@ -99,7 +99,7 @@ Note that this target will not update an existing checkout - after bumping `EPIO
 
 ### apio compatibility
 
-`epio` v0.2.1 requires [`apio`](https://github.com/piersfinlayson/apio) v0.3.0 or later.  `epio_from_apio()` reads GPIO pull, drive strength and slew rate state that `apio` did not track before v0.2.0, and epio's tests stage RX FIFO words in a way that `apio` v0.3.0 changed.
+`epio` v0.2.2 requires [`apio`](https://github.com/piersfinlayson/apio) v0.3.0 or later.  `epio_from_apio()` reads GPIO pull, drive strength and slew rate state that `apio` did not track before v0.2.0, and epio's tests stage RX FIFO words in a way that `apio` v0.3.0 changed.
 
 `epio`'s own build clones `apio` at the version given by `APIO_VERSION` in the [`Makefile`](Makefile).  If your project already vendors `apio`, make sure it is pinned to a compatible version too - the two are built from source together, so a mismatch shows up as a compile error in `apio.h` rather than anything more helpful.
 
@@ -114,12 +114,14 @@ You must stub out any RP2350-specific non-PIO functionality that your program re
 There are currently some limitations in `epio`'s PIO emulation.  If you need a feature that isn't implemented yet, please raise an issue or submit a PR.
 
 Current limitations:
-- No side step pin support (delays are supported).
-- MOVs to/from the RX FIFO are not supported.
-- Does not suport 2 cycle GPIO input delay via flip-flops to avoid meta-stability.
-- Only supports 4 word FIFOs.
+- No side-set pin support (delays are supported).  `SIDESET_BASE`, `SIDE_EN` and `SIDE_PINDIR` are ignored.
+- No `OUT_STICKY` or inline OUT enable (`INLINE_OUT_EN`, `OUT_EN_SEL`).
+- MOVs to/from the RX FIFO are not supported (`FJOIN_RX_PUT`, `FJOIN_RX_GET`).
+- Does not support 2 cycle GPIO input delay via flip-flops to avoid meta-stability.
+- Only supports 4 word FIFOs (`FJOIN_RX` and `FJOIN_TX` are ignored).
 - Ignores clock divider settings.
-- Limited DMA support - implements a pair of DMA channels doing a read from the address in one PIO SM's TX FIFO, and writing to another SM's RX FIFO.
+- `EXEC_STALLED` in `EXECCTRL` isn't reported.
+- Limited DMA support - a pair of channels that reads an address from one SM's RX FIFO and writes the SRAM value there to another SM's TX FIFO, and a channel that drains an SM's RX FIFO into an SRAM ring.
 
 ## WASM
 

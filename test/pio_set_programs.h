@@ -436,3 +436,77 @@ static int setup_set_pins_block1(void **state) {
 
     while (1) { APIO_ASM_WFI(); }
 }
+
+// A single SET instruction, for destination encodings the assembler has no macro for
+static int setup_set_instr(uint16_t instr) {
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(instr);
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(0);
+    APIO_SM_PINCTRL_SET(0);
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// SET X, 17 with side-set 0b11 and delay 3 sharing the delay/side-set field
+static int setup_set_with_delay_and_side_set(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_ADD_DELAY(APIO_SET_X(17), 0b11011));
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_SET_Y(20));
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(0);
+    APIO_SM_PINCTRL_SET(APIO_SIDE_SET_COUNT(2));
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
+
+// SET PINS, 3 with SET_COUNT 1 and SIDESET_COUNT 1 - block 0 controls GPIOs 5-6
+static int setup_set_pins_count_with_side_set(void **state) {
+    (void)state;
+    APIO_ENABLE_PIOS();
+    APIO_ASM_INIT();
+    APIO_GPIO_INIT();
+    APIO_GPIO_INPUT_OUTPUT(5, 0);
+    APIO_GPIO_INPUT_OUTPUT(6, 0);
+    APIO_SET_BLOCK(0);
+    APIO_SET_SM(0);
+
+    APIO_ADD_INSTR(APIO_SET_PINS(3));
+    APIO_WRAP_TOP();
+    APIO_ADD_INSTR(APIO_SET_X(20));
+
+    APIO_SM_CLKDIV_SET(1, 0);
+    APIO_SM_EXECCTRL_SET(0);
+    APIO_SM_SHIFTCTRL_SET(0);
+    APIO_SM_PINCTRL_SET(
+        APIO_SET_BASE(5) |
+        APIO_SET_COUNT(1) |
+        APIO_SIDE_SET_COUNT(1)
+    );
+    APIO_SM_JMP_TO_START();
+    APIO_END_BLOCK();
+    APIO_ENABLE_SMS(0, 1);
+
+    while (1) { APIO_ASM_WFI(); }
+}
