@@ -1,0 +1,22 @@
+; Test program for epio_add_program(): drives X + 1 pulses on a SET pin,
+; then idles.  Exercises JMP relocation, wrap and SET pin configuration.
+
+.program pulse_train
+    pull block
+    out x, 32
+loop:
+    set pins, 1
+    set pins, 0
+    jmp x-- loop
+.wrap_target
+idle:
+    jmp idle
+.wrap
+
+% c-sdk {
+static inline pio_sm_config pulse_train_config(uint offset, uint pin) {
+    pio_sm_config c = pulse_train_program_get_default_config(offset);
+    sm_config_set_set_pins(&c, pin, 1);
+    return c;
+}
+%}

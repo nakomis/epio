@@ -39,6 +39,11 @@ Added:
   FIFO and draining its RX FIFO: host callbacks made at the end of each cycle
   while TX DREQ (FIFO not full) or RX DREQ (FIFO not empty) is asserted, one
   word per direction per cycle.
+- Loading pioasm `-o c-sdk` output: `epio_pioasm.h` provides pico-sdk
+  compatible `pio_program_t`, `pio_sm_config` and `sm_config_*()` functions,
+  plus `epio_add_program()` (JMP relocation, and WAIT GPIO adjustment for
+  GPIOBASE 16) and `epio_sm_init()`.  With `shim/` on the include path, the
+  generated header compiles unmodified on the host.
 
 ## v0.2.2 - 2026-10-13
 
