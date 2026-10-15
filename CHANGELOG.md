@@ -10,6 +10,15 @@ Added:
   every cycle an instruction executes, including when it stalls, and wins over
   an `OUT` or `SET` from the same SM to the same pin.  Instructions run via
   `OUT EXEC`, `MOV EXEC` and apio pre-instructions apply their side-set too.
+- SM clock dividers, opt-in with `epio_set_clkdiv_enabled()` so existing
+  users see no change.  When enabled, `epio_step_cycles()` steps system clock
+  cycles and each SM executes only on the cycles its `CLKDIV` divider (16 bit
+  integer, 8 bit fraction, first-order delta-sigma) asserts its clock enable.
+  Dividers are free-running, as on hardware, and `epio_restart_clkdiv()`
+  restarts them from phase 0 like `CTRL` `CLKDIV_RESTART`.
+- `epio_set_sysclk_hz()` and `epio_get_sysclk_hz()`, a nominal system clock
+  frequency (default 150 MHz) for hosts converting cycle counts to time.
+
 
 ## v0.2.2 - 2026-10-13
 

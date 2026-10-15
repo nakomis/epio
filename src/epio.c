@@ -52,6 +52,8 @@ static void epio_init_sm(epio_t *epio, uint8_t block, uint8_t sm) {
     SM(block, sm).enabled   = 0;
     SM(block, sm).exec_pending = 0;
     SM(block, sm).exec_instr   = 0;
+    SM(block, sm).clkdiv_count    = 1;
+    SM(block, sm).clkdiv_frac_acc = 0;
 
     FIFO(block, sm).tx_fifo_count = 0;
     FIFO(block, sm).rx_fifo_count = 0;
@@ -109,6 +111,8 @@ epio_t *epio_init(void) {
     }
 
     epio->cycle_count = 0;
+    epio->clkdiv_enabled = 0;
+    epio->sysclk_hz = EPIO_DEFAULT_SYSCLK_HZ;
 
     return epio;
 }

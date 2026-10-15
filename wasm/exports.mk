@@ -27,6 +27,11 @@ EPIO_WASM_EXPORTS := \
 	"_epio_step_cycles", \
 	"_epio_get_cycle_count", \
 	"_epio_reset_cycle_count", \
+	"_epio_set_clkdiv_enabled", \
+	"_epio_get_clkdiv_enabled", \
+	"_epio_restart_clkdiv", \
+	"_epio_set_sysclk_hz", \
+	"_epio_get_sysclk_hz", \
 	\
 	"_epio_wait_tx_fifo", \
 	"_epio_tx_fifo_depth", \
