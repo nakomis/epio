@@ -71,14 +71,23 @@ typedef struct pio_program {
 /**
  * @brief An SM configuration, as built by the sm_config_*() functions.
  *
- * Matches the pico-sdk's pio_sm_config, without its GPIOBASE tracking.
+ * Matches the pico-sdk's pio_sm_config on RP2350B, including its GPIOBASE
+ * tracking: the pin setters take absolute GPIO numbers (0-47), and
+ * epio_sm_init() adjusts them for the block's GPIOBASE, as pio_sm_set_config()
+ * does (PICO_PIO_USE_GPIO_BASE).
  */
 typedef struct {
     uint32_t clkdiv;
     uint32_t execctrl;
     uint32_t shiftctrl;
     uint32_t pinctrl;
+    // Each 5-bit field at a PINCTRL pin-base position (and JMP_PIN's at bit
+    // 20) records which 16-pin range that pin is in, as the pico-sdk does:
+    // 0b11111 not set, 0b00000 GPIO 0-15, 0b00001 16-31, 0b00010 32-47.
+    uint32_t pinhi;
 } pio_sm_config;
+
+#define EPIO_PINHI_EXECCTRL_LSB 20
 
 // SMx register fields (RP2350 datasheet 11.7)
 #define EPIO_CLKDIV_FRAC_LSB            8
@@ -115,7 +124,9 @@ typedef struct {
      (((uint32_t)(VALUE) & ((1u << (WIDTH)) - 1)) << (LSB)))
 
 static inline void sm_config_set_out_pin_base(pio_sm_config *c, uint out_base) {
+    assert(out_base < NUM_GPIOS && "Pin must be 0 to 47");
     c->pinctrl = EPIO_FIELD(c->pinctrl, EPIO_PINCTRL_OUT_BASE_LSB, 5, out_base & 31);
+    c->pinhi = EPIO_FIELD(c->pinhi, EPIO_PINCTRL_OUT_BASE_LSB, 5, out_base >> 4);
 }
 
 static inline void sm_config_set_out_pin_count(pio_sm_config *c, uint out_count) {
@@ -129,7 +140,9 @@ static inline void sm_config_set_out_pins(pio_sm_config *c, uint out_base, uint 
 }
 
 static inline void sm_config_set_set_pin_base(pio_sm_config *c, uint set_base) {
+    assert(set_base < NUM_GPIOS && "Pin must be 0 to 47");
     c->pinctrl = EPIO_FIELD(c->pinctrl, EPIO_PINCTRL_SET_BASE_LSB, 5, set_base & 31);
+    c->pinhi = EPIO_FIELD(c->pinhi, EPIO_PINCTRL_SET_BASE_LSB, 5, set_base >> 4);
 }
 
 static inline void sm_config_set_set_pin_count(pio_sm_config *c, uint set_count) {
@@ -143,7 +156,9 @@ static inline void sm_config_set_set_pins(pio_sm_config *c, uint set_base, uint 
 }
 
 static inline void sm_config_set_in_pin_base(pio_sm_config *c, uint in_base) {
+    assert(in_base < NUM_GPIOS && "Pin must be 0 to 47");
     c->pinctrl = EPIO_FIELD(c->pinctrl, EPIO_PINCTRL_IN_BASE_LSB, 5, in_base & 31);
+    c->pinhi = EPIO_FIELD(c->pinhi, EPIO_PINCTRL_IN_BASE_LSB, 5, in_base >> 4);
 }
 
 static inline void sm_config_set_in_pins(pio_sm_config *c, uint in_base) {
@@ -156,7 +171,9 @@ static inline void sm_config_set_in_pin_count(pio_sm_config *c, uint in_count) {
 }
 
 static inline void sm_config_set_sideset_pin_base(pio_sm_config *c, uint sideset_base) {
+    assert(sideset_base < NUM_GPIOS && "Pin must be 0 to 47");
     c->pinctrl = EPIO_FIELD(c->pinctrl, EPIO_PINCTRL_SIDESET_BASE_LSB, 5, sideset_base & 31);
+    c->pinhi = EPIO_FIELD(c->pinhi, EPIO_PINCTRL_SIDESET_BASE_LSB, 5, sideset_base >> 4);
 }
 
 static inline void sm_config_set_sideset_pins(pio_sm_config *c, uint sideset_base) {
@@ -189,7 +206,9 @@ static inline void sm_config_set_wrap(pio_sm_config *c, uint wrap_target, uint w
 }
 
 static inline void sm_config_set_jmp_pin(pio_sm_config *c, uint pin) {
+    assert(pin < NUM_GPIOS && "Pin must be 0 to 47");
     c->execctrl = EPIO_FIELD(c->execctrl, EPIO_EXECCTRL_JMP_PIN_LSB, 5, pin & 31);
+    c->pinhi = EPIO_FIELD(c->pinhi, EPIO_PINHI_EXECCTRL_LSB, 5, pin >> 4);
 }
 
 static inline void sm_config_set_in_shift(pio_sm_config *c, bool shift_right, bool autopush, uint push_threshold) {
@@ -220,6 +239,7 @@ static inline void sm_config_set_out_special(pio_sm_config *c, bool sticky, bool
  */
 static inline pio_sm_config pio_get_default_sm_config(void) {
     pio_sm_config c = {0};
+    c.pinhi = 0xFFFFFFFFu;   // no pins set
     sm_config_set_clkdiv_int_frac8(&c, 1, 0);
     sm_config_set_wrap(&c, 0, 31);
     sm_config_set_in_shift(&c, true, false, 32);
