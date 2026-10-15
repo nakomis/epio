@@ -30,6 +30,8 @@ EPIO_WASM_EXPORTS := \
 	"_epio_set_clkdiv_enabled", \
 	"_epio_get_clkdiv_enabled", \
 	"_epio_restart_clkdiv", \
+	"_epio_write_ctrl", \
+	"_epio_read_ctrl", \
 	"_epio_set_sysclk_hz", \
 	"_epio_get_sysclk_hz", \
 	\
