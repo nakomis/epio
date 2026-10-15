@@ -132,12 +132,11 @@ static void apply_apio_state(epio_t *epio) {
             //      overwrite the pending delay with their own, permanently
             //      phase-shifting the SM against the bus.
             //
-            //   2. Swallowing any delay/side-set the injected instructions
-            //      themselves encode.  These pre-instructions model PIO EXECs
-            //      issued from the CPU, which run effectively instantaneously
-            //      relative to the SM.  epio does not model fine-grained CPU/PIO
-            //      interleaving, so discarding their own delay is the correct
-            //      approximation rather than applying it to the SM.
+            //   2. Swallowing any delay the injected instructions themselves
+            //      encode.  These pre-instructions model PIO EXECs issued from
+            //      the CPU, which ignore delay cycles (11.5.7).  Their side-set
+            //      is still applied, as on hardware - which is why the pico-sdk
+            //      clears SIDESET_COUNT around the SETs it EXECs to drive pins.
             uint8_t pre_count = _apio_emulated_pio.pre_instr_count[block][sm];
             if (pre_count <= MAX_PRE_INSTRS) {
                 uint8_t saved_delay = SM(block, sm).delay;

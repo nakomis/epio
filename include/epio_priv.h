@@ -294,6 +294,10 @@ void epio_dma_step(epio_t *epio);
     ((REG(BLOCK, _SM).execctrl >> 12) & 0x1F)
 #define WRAP_BOTTOM(BLOCK, _SM) \
     ((REG(BLOCK, _SM).execctrl >> 7) & 0x1F)
+#define SIDE_EN_GET(BLOCK, _SM) \
+    ((REG(BLOCK, _SM).execctrl >> 30) & 0x1)
+#define SIDE_PINDIR_GET(BLOCK, _SM) \
+    ((REG(BLOCK, _SM).execctrl >> 29) & 0x1)
 
 // SHIFTCTRL register fields
 #define AUTOPULL_GET(BLOCK, _SM) \
@@ -325,6 +329,8 @@ void epio_dma_step(epio_t *epio);
     ((REG(BLOCK, _SM).pinctrl >> 0) & 0x1F)
 #define SIDESET_COUNT_GET(BLOCK, _SM) \
     ((REG(BLOCK, _SM).pinctrl >> 29) & 0x7)
+#define SIDESET_BASE_GET(BLOCK, _SM) \
+    ((REG(BLOCK, _SM).pinctrl >> 10) & 0x1F)
 
 // Macros to simplify PIO emulation
 #define NEW_INSTR(NEW_PC)   do { \

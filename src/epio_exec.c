@@ -25,6 +25,57 @@ static void epio_autopull(epio_t *epio, uint8_t block, uint8_t sm) {
     }
 }
 
+// Applies the side-set encoded in an instruction's Delay/side-set field
+// (11.5.1).
+//
+// Called after the instruction's main effect, so that where side-set and an
+// OUT/SET (or MOV PINS) from the same SM write the same pin on the same
+// cycle, the side-set data is used (11.5.6).
+//
+// Called every cycle the instruction executes, including when it stalls -
+// side-set "is not affected by stalls, and always takes place on the first
+// cycle of the attached instruction" (11.2.5).  Re-applying the same value
+// on later stalled cycles is indistinguishable from applying it once, unless
+// another SM writes the pin during the stall.  Delay cycles do not execute
+// the instruction, so do not re-apply side-set.
+static void epio_apply_sideset(epio_t *epio, uint8_t block, uint8_t sm, uint16_t instr) {
+    uint8_t sideset_count = SIDESET_COUNT_GET(block, sm);
+    if (sideset_count == 0) {
+        return;
+    }
+
+    // Side-set takes the top SIDESET_COUNT bits of the 5 bit field, and
+    // SIDESET_COUNT includes the enable bit, if SIDE_EN is set.
+    uint8_t sideset_data = ((instr >> 8) & 0x1F) >> (5 - sideset_count);
+    uint8_t sideset_pins = sideset_count;
+    if (SIDE_EN_GET(block, sm)) {
+        sideset_pins--;
+        if (!((sideset_data >> sideset_pins) & 0x1)) {
+            // Enable bit clear - no side-set on this instruction
+            return;
+        }
+    }
+
+    uint8_t sideset_base = SIDESET_BASE_GET(block, sm);
+    uint8_t pindir = SIDE_PINDIR_GET(block, sm);
+    for (int ii = 0; ii < sideset_pins; ii++) {
+        uint8_t pin = ((sideset_base + ii) % 32) + GPIOBASE(block);
+        if (!epio_block_can_control_gpio_output(epio, block, pin)) {
+            continue;
+        }
+        uint8_t bit = (sideset_data >> ii) & 0x1;
+        if (pindir) {
+            if (bit) {
+                epio_set_gpio_output(epio, pin);
+            } else {
+                epio_set_gpio_input(epio, pin);
+            }
+        } else {
+            epio_set_gpio_output_level(epio, pin, bit);
+        }
+    }
+}
+
 // PINCTRL OUT_COUNT, which the datasheet limits to 32
 static uint8_t epio_out_count(epio_t *epio, uint8_t block, uint8_t sm) {
     uint8_t out_count = OUT_COUNT_GET(block, sm);
@@ -840,6 +891,8 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
             }
             break;
     }
+
+    epio_apply_sideset(epio, block, sm, instr);
 
     if (process_new_delay) {
         SM(block, sm).delay = new_delay;
