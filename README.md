@@ -117,7 +117,7 @@ Current limitations:
 - No side-set pin support (delays are supported).  `SIDESET_BASE`, `SIDE_EN` and `SIDE_PINDIR` are ignored.
 - No `OUT_STICKY` or inline OUT enable (`INLINE_OUT_EN`, `OUT_EN_SEL`).
 - MOVs to/from the RX FIFO are not supported (`FJOIN_RX_PUT`, `FJOIN_RX_GET`).
-- Does not support 2 cycle GPIO input delay via flip-flops to avoid meta-stability.
+- The 2 cycle input synchronisers, and PIO reading back the level it drives, are only modelled when enabled with `epio_set_input_sync_enabled()`.
 - Only supports 4 word FIFOs (`FJOIN_RX` and `FJOIN_TX` are ignored).
 - Ignores clock divider settings.
 - `EXEC_STALLED` in `EXECCTRL` isn't reported.

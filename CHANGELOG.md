@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Added:
+
+- Hardware input timing, opt-in with `epio_set_input_sync_enabled()` so
+  existing users see no change.  When enabled, `IN`, `WAIT`, `JMP PIN` and
+  `MOV` from `PINS` read the pad, so a GPIO PIO drives reads back its driven
+  level, through each block's 2-flipflop input synchronisers (two cycles of
+  latency).  `epio_set_input_sync_bypass()` sets a block's
+  `INPUT_SYNC_BYPASS`, relative to its GPIOBASE.
+
 ## v0.2.2 - 2026-10-13
 
 Fixed:

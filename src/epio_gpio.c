@@ -193,7 +193,81 @@ void epio_set_gpio_output_level(epio_t *epio, uint8_t pin, uint8_t level) {
 uint8_t epio_get_jmp_pin_state(epio_t *epio, uint8_t block, uint8_t sm, uint8_t offset) {
     uint8_t jmp_pin = ((JMP_PIN_GET(block, sm) + offset) % 32) + GPIOBASE(block);
     CHECK_GPIO(jmp_pin);
-    return epio_get_gpio_input(epio, jmp_pin);
+    return epio_get_pio_input(epio, block, jmp_pin);
+}
+
+// The level on each GPIO's pad, as seen by the input path: the output level
+// where the GPIO is an output, otherwise the externally driven or pulled
+// level, then any input inversion.
+static uint64_t epio_pad_levels(epio_t *epio) {
+    uint64_t dir = epio->gpio.gpio_direction;
+    uint64_t pad = (dir & epio->gpio.gpio_output_state) |
+                   (~dir & epio->gpio.gpio_input_state);
+    pad ^= epio->gpio.input_inverted;
+    return pad & ((1ULL << NUM_GPIOS) - 1);
+}
+
+// Returns the level a PIO block's SMs see on a GPIO, for IN, WAIT, JMP PIN
+// and MOV from PINS.
+uint8_t epio_get_pio_input(epio_t *epio, uint8_t block, uint8_t pin) {
+    CHECK_GPIO(pin);
+    if (!epio->input_sync_enabled) {
+        return epio_get_gpio_input(epio, pin);
+    }
+
+    // PIO only addresses GPIOs within its 32 GPIO window
+    assert(pin >= GPIOBASE(block) && pin < GPIOBASE(block) + 32 && "GPIO outside block's window");
+    uint8_t bypass = (epio->block[block].input_sync_bypass >> (pin - GPIOBASE(block))) & 0x1;
+    uint64_t levels = bypass ? epio->pad_sample : epio->block[block].input_sync[1];
+    return (levels >> pin) & 0x1;
+}
+
+// Samples the pads at the start of a system clock cycle.  Bypassed inputs
+// see this sample directly; synchronised inputs see it two cycles later.
+void epio_input_sync_sample(epio_t *epio) {
+    if (epio->input_sync_enabled) {
+        epio->pad_sample = epio_pad_levels(epio);
+    }
+}
+
+// Clocks the input synchronisers at the end of a system clock cycle.  They
+// capture the pad levels during the cycle, so not the writes made by SMs in
+// this cycle, which reach the pads at its end.
+void epio_input_sync_clock(epio_t *epio) {
+    if (epio->input_sync_enabled) {
+        for (int block = 0; block < NUM_PIO_BLOCKS; block++) {
+            epio->block[block].input_sync[1] = epio->block[block].input_sync[0];
+            epio->block[block].input_sync[0] = epio->pad_sample;
+        }
+    }
+}
+
+void epio_set_input_sync_enabled(epio_t *epio, uint8_t enabled) {
+    epio->input_sync_enabled = enabled ? 1 : 0;
+    if (enabled) {
+        // Start from settled synchronisers, rather than modelling a ramp
+        // from all zeroes
+        uint64_t pad = epio_pad_levels(epio);
+        epio->pad_sample = pad;
+        for (int block = 0; block < NUM_PIO_BLOCKS; block++) {
+            epio->block[block].input_sync[0] = pad;
+            epio->block[block].input_sync[1] = pad;
+        }
+    }
+}
+
+uint8_t epio_get_input_sync_enabled(epio_t *epio) {
+    return epio->input_sync_enabled;
+}
+
+void epio_set_input_sync_bypass(epio_t *epio, uint8_t block, uint32_t bypass) {
+    CHECK_BLOCK();
+    epio->block[block].input_sync_bypass = bypass;
+}
+
+uint32_t epio_get_input_sync_bypass(epio_t *epio, uint8_t block) {
+    CHECK_BLOCK();
+    return epio->block[block].input_sync_bypass;
 }
 
 // Used to explicitly drive GPIOs externally.
