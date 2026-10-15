@@ -14,6 +14,7 @@
 static void epio_sm_step(epio_t *epio, uint8_t block, uint8_t sm);
 static void epio_finish_step(epio_t *epio);
 static void epio_after_step(epio_t *epio);
+static void epio_cycle_callback(epio_t *epio);
 
 // Refills an empty OSR from the TX FIFO, if autopull is enabled
 static void epio_autopull(epio_t *epio, uint8_t block, uint8_t sm) {
@@ -190,8 +191,30 @@ void epio_step_cycles(epio_t *epio, uint32_t cycles) {
         epio_finish_step(epio);
         epio_input_sync_clock(epio);
         epio_after_step(epio);
+        epio_cycle_callback(epio);
         epio->cycle_count++;
     }
+}
+
+void epio_set_cycle_callback(epio_t *epio, epio_cycle_callback_t callback, void *ctx) {
+    epio->cycle_callback = callback;
+    epio->cycle_callback_ctx = ctx;
+    epio->cycle_callback_out = epio->gpio.gpio_output_state;
+    epio->cycle_callback_oe = epio->gpio.gpio_direction;
+}
+
+// Reports the end of a cycle to the host's callback, if any
+static void epio_cycle_callback(epio_t *epio) {
+    if (epio->cycle_callback == NULL) {
+        return;
+    }
+
+    uint64_t out = epio->gpio.gpio_output_state;
+    uint64_t oe = epio->gpio.gpio_direction;
+    uint64_t changed = (out ^ epio->cycle_callback_out) | (oe ^ epio->cycle_callback_oe);
+    epio->cycle_callback_out = out;
+    epio->cycle_callback_oe = oe;
+    epio->cycle_callback(epio, epio->cycle_count, out, oe, changed, epio->cycle_callback_ctx);
 }
 
 uint64_t epio_get_cycle_count(epio_t *epio) {
