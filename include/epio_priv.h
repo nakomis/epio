@@ -242,6 +242,13 @@ struct epio_t {
     // input_sync_enabled
     uint64_t pad_sample;
 
+    // Host callback made at the end of every cycle, and the output levels
+    // and enables it was last given, to compute what changed
+    epio_cycle_callback_t cycle_callback;
+    void *cycle_callback_ctx;
+    uint64_t cycle_callback_out;
+    uint64_t cycle_callback_oe;
+
     // SRAM
     uint8_t *sram;
 
