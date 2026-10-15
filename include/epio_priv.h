@@ -202,6 +202,14 @@ typedef struct {
 
     // Instruction memory for this block
     uint16_t instr[NUM_INSTRS_PER_BLOCK];
+
+    // INPUT_SYNC_BYPASS register - one bit per GPIO in this block's 32 GPIO
+    // window, starting at GPIOBASE
+    uint32_t input_sync_bypass;
+
+    // This block's 2-flipflop input synchronisers (11.5.6.3), one bit per
+    // GPIO.  sync[0] is the first stage, sync[1] the output seen by the SMs.
+    uint64_t input_sync[2];
 } epio_block_state_t;
 
 struct epio_t {
@@ -223,6 +231,16 @@ struct epio_t {
 
     // Nominal system clock frequency, for hosts converting cycles to time
     uint32_t sysclk_hz;
+
+    // Whether PIO inputs are modelled as on hardware: read from the pad
+    // (so a pin PIO drives reads back its driven level) through each block's
+    // input synchronisers.  When 0 (the default), PIO reads the input level
+    // directly.
+    uint8_t input_sync_enabled;
+
+    // Pad levels sampled at the start of the current cycle, when
+    // input_sync_enabled
+    uint64_t pad_sample;
 
     // SRAM
     uint8_t *sram;
@@ -257,6 +275,9 @@ void epio_sram_free(epio_t *epio);
 
 // epio_gpio.c
 uint8_t epio_get_jmp_pin_state(epio_t *epio, uint8_t block, uint8_t sm, uint8_t offset);
+uint8_t epio_get_pio_input(epio_t *epio, uint8_t block, uint8_t pin);
+void epio_input_sync_sample(epio_t *epio);
+void epio_input_sync_clock(epio_t *epio);
 
 // epio_dma.c
 void epio_init_dma(epio_t *epio);

@@ -43,6 +43,10 @@ EPIO_WASM_EXPORTS := \
 	\
 	"_epio_drive_gpios_ext", \
 	"_epio_get_gpio_input", \
+	"_epio_set_input_sync_enabled", \
+	"_epio_get_input_sync_enabled", \
+	"_epio_set_input_sync_bypass", \
+	"_epio_get_input_sync_bypass", \
 	"_epio_init_gpios", \
 	"_epio_set_gpio_force_input_low", \
 	"_epio_set_gpio_force_input_high", \
