@@ -38,6 +38,25 @@ void epio_sm_init(epio_t *epio, uint8_t block, uint8_t sm, uint8_t initial_pc, c
     assert(initial_pc < NUM_INSTRS_PER_BLOCK && "Invalid initial PC");
 
     pio_sm_config c = config ? *config : pio_get_default_sm_config();
+
+    // pio_sm_set_config() with PICO_PIO_USE_GPIO_BASE: the config holds
+    // absolute pins (pin & 31, plus its 16-pin range in pinhi). Each pin
+    // field in use must fall in the block's 32-pin window, and with GPIOBASE
+    // 16 its bit 4 flips (16-31 -> 0-15, 32-47 -> 16-31).
+    const uint32_t lsbs = (1u << EPIO_PINHI_EXECCTRL_LSB) |
+                          (1u << EPIO_PINCTRL_IN_BASE_LSB) | (1u << EPIO_PINCTRL_OUT_BASE_LSB) |
+                          (1u << EPIO_PINCTRL_SET_BASE_LSB) | (1u << EPIO_PINCTRL_SIDESET_BASE_LSB);
+    uint32_t used = (~c.pinhi >> 4) & lsbs;
+    uint32_t under_16 = (~c.pinhi) & (~c.pinhi >> 1) & used;
+    uint32_t over_32 = (c.pinhi >> 1) & used;
+    uint32_t gpio_base = GPIOBASE(block);
+    assert(!(under_16 && gpio_base) && "Config uses GPIO 0-15, outside a GPIOBASE 16 block's window");
+    assert(!(over_32 && !gpio_base) && "Config uses GPIO 32-47, outside a GPIOBASE 0 block's window");
+    if (gpio_base) {
+        c.execctrl ^= (used >> EPIO_PINHI_EXECCTRL_LSB) << (EPIO_EXECCTRL_JMP_PIN_LSB + 4);
+        c.pinctrl ^= (used & ~(1u << EPIO_PINHI_EXECCTRL_LSB)) << 4;
+    }
+
     epio_disable_sm(epio, block, sm);
     epio_sm_reg_t reg = {
         .clkdiv = c.clkdiv,
