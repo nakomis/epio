@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Added:
+
+- Side-set.  Instructions drive `SIDESET_COUNT` side-set bits onto pin levels,
+  or onto pin directions with `SIDE_PINDIR`, mapped from `SIDESET_BASE` and
+  wrapping at 32.  With `SIDE_EN`, the top bit is an enable.  Side-set applies on
+  every cycle an instruction executes, including when it stalls, and wins over
+  an `OUT` or `SET` from the same SM to the same pin.  Instructions run via
+  `OUT EXEC`, `MOV EXEC` and apio pre-instructions apply their side-set too.
+
 ## v0.2.2 - 2026-10-13
 
 Fixed:

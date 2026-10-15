@@ -58,6 +58,7 @@ uint64_t gpio_states = epio_read_pin_states(epio);
 - Supports emulating all 12 PIO state machines running simultaneously.
 - Single, multi-step modes, and run until supported conditions are met.
 - Supports internal PIO IRQs.
+- Supports side-set, including the optional enable bit and pin direction mode.
 - Supports GPIOBASE=0 and 16, and up to 48 GPIOs to support both RP2350A and B.
 - Provides an SRAM API, so tests can simulate reading and writing to the RP2350's SRAM, based on PIO RX/TX FIFOs.
 - WASM build, allowing you to run emulated firmware and visualise PIO programs and GPIO states in the browser.
@@ -114,7 +115,6 @@ You must stub out any RP2350-specific non-PIO functionality that your program re
 There are currently some limitations in `epio`'s PIO emulation.  If you need a feature that isn't implemented yet, please raise an issue or submit a PR.
 
 Current limitations:
-- No side-set pin support (delays are supported).  `SIDESET_BASE`, `SIDE_EN` and `SIDE_PINDIR` are ignored.
 - No `OUT_STICKY` or inline OUT enable (`INLINE_OUT_EN`, `OUT_EN_SEL`).
 - MOVs to/from the RX FIFO are not supported (`FJOIN_RX_PUT`, `FJOIN_RX_GET`).
 - Does not support 2 cycle GPIO input delay via flip-flops to avoid meta-stability.
