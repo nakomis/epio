@@ -168,6 +168,8 @@ void epio_step_cycles(epio_t *epio, uint32_t cycles) {
     for (uint32_t ii = 0; ii < cycles; ii++) {
         EPIO_DBG("Step...");
 
+        epio_input_sync_sample(epio);
+
         // !!!
         //
         // It is important that SMs be stepped in ascending order, as in this
@@ -186,6 +188,7 @@ void epio_step_cycles(epio_t *epio, uint32_t cycles) {
             }
         }
         epio_finish_step(epio);
+        epio_input_sync_clock(epio);
         epio_after_step(epio);
         epio->cycle_count++;
     }
@@ -377,7 +380,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
             switch (source) {
                 case WAIT_SRC_GPIO:
                     ;
-                    uint8_t gpio_state = epio_get_gpio_input(epio, wait_index + GPIOBASE(block));
+                    uint8_t gpio_state = epio_get_pio_input(epio, block, wait_index + GPIOBASE(block));
                     condition_met = (gpio_state == polarity);
                     break;
                     
@@ -385,7 +388,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                     ;
                     uint8_t pin_base = IN_BASE_GET(block, sm);
                     uint8_t pin = ((pin_base + wait_index) % 32) + GPIOBASE(block);
-                    uint8_t pin_state = (wait_index < IN_COUNT(block, sm)) ? epio_get_gpio_input(epio, pin) : 0;
+                    uint8_t pin_state = (wait_index < IN_COUNT(block, sm)) ? epio_get_pio_input(epio, block, pin) : 0;
                     condition_met = (pin_state == polarity);
                     break;
                     
@@ -451,7 +454,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                         uint8_t in_pins = IN_COUNT(block, sm);
                         for (int ii = 0; ii < in_count && ii < in_pins; ii++) {
                             uint8_t pin = ((in_base + ii) % 32) + GPIOBASE(block);
-                            if (epio_get_gpio_input(epio, pin)) {
+                            if (epio_get_pio_input(epio, block, pin)) {
                                 in_data |= (1u << ii);
                             }
                         }
@@ -714,7 +717,7 @@ uint8_t epio_exec_instr_sm(epio_t *epio, uint8_t block, uint8_t sm, uint16_t ins
                     uint8_t in_count = IN_COUNT(block, sm);
                     for (int ii = 0; ii < in_count; ii++) {
                         uint8_t pin = ((in_base + ii) % 32) + GPIOBASE(block);
-                        if (epio_get_gpio_input(epio, pin)) {
+                        if (epio_get_pio_input(epio, block, pin)) {
                             mov_value |= (1u << ii);
                         }
                     }

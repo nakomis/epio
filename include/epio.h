@@ -563,6 +563,67 @@ uint64_t epio_get_gpio_output_control(epio_t *epio, uint8_t block);
 EPIO_EXPORT uint8_t epio_get_gpio_input(epio_t *epio, uint8_t pin);
 
 /**
+ * @brief Enable or disable hardware input timing for PIO.
+ *
+ * Disabled by default, in which case IN, WAIT, JMP PIN and MOV from PINS
+ * read each GPIO's input level (as set by epio_set_gpio_input_level(),
+ * epio_drive_gpios_ext() or the pulls) directly and immediately.
+ *
+ * When enabled, PIO inputs are modelled as on the RP2350:
+ * - PIO reads the pad, so a GPIO configured as an output reads back its
+ *   output level, and other GPIOs read their externally driven or pulled
+ *   level.  Input inversion still applies.
+ * - Each PIO block has a 2-flipflop synchroniser on each GPIO input
+ *   (datasheet 11.5.6.3), so a level present on the pad during cycle t is
+ *   seen by SMs from cycle t + 2.
+ * - A GPIO whose bit is set in the block's INPUT_SYNC_BYPASS
+ *   (epio_set_input_sync_bypass()) skips the synchroniser, and is seen in
+ *   the same cycle.
+ *
+ * Pad levels are sampled at the start of each cycle, so a level set by the
+ * host between epio_step_cycles() calls is on the pad for the next cycle,
+ * and a pin written by an SM in cycle t is on the pad from cycle t + 1.
+ *
+ * Enabling starts the synchronisers settled at the current pad levels.
+ *
+ * @param epio    The epio instance.
+ * @param enabled 1 to model hardware input timing, 0 to read inputs directly.
+ */
+EPIO_EXPORT void epio_set_input_sync_enabled(epio_t *epio, uint8_t enabled);
+
+/**
+ * @brief Return whether hardware input timing is enabled.
+ *
+ * @param epio  The epio instance.
+ * @return      1 if enabled, 0 if not.
+ * @see epio_set_input_sync_enabled()
+ */
+EPIO_EXPORT uint8_t epio_get_input_sync_enabled(epio_t *epio);
+
+/**
+ * @brief Set a PIO block's INPUT_SYNC_BYPASS register.
+ *
+ * Each bit corresponds to one GPIO in the block's 32 GPIO window: bit n is
+ * GPIO n + GPIOBASE.  A set bit bypasses that GPIO's input synchroniser.
+ * Only has an effect when hardware input timing is enabled.
+ *
+ * @param epio    The epio instance.
+ * @param block   PIO block index (0 to NUM_PIO_BLOCKS-1).
+ * @param bypass  Register value.
+ * @see epio_set_input_sync_enabled()
+ */
+EPIO_EXPORT void epio_set_input_sync_bypass(epio_t *epio, uint8_t block, uint32_t bypass);
+
+/**
+ * @brief Return a PIO block's INPUT_SYNC_BYPASS register.
+ *
+ * @param epio   The epio instance.
+ * @param block  PIO block index (0 to NUM_PIO_BLOCKS-1).
+ * @return       Register value.
+ */
+EPIO_EXPORT uint32_t epio_get_input_sync_bypass(epio_t *epio, uint8_t block);
+
+/**
  * @brief Reset all GPIOs to their hardware reset defaults.
  *
  * Sets all pins to input direction, pull-down enabled, 4 mA drive strength,
