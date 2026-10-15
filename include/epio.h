@@ -258,6 +258,10 @@ EPIO_EXPORT uint16_t epio_get_instr(epio_t *epio, uint8_t block, uint8_t instr_n
  * on a FIFO condition or IRQ consume cycles but make no forward progress.
  * The global cycle count is incremented by @p cycles after each call.
  *
+ * If clock dividers are enabled with epio_set_clkdiv_enabled(), @p cycles
+ * are system clock cycles, and each SM only executes on the cycles its
+ * clock divider asserts its clock enable.
+ *
  * @param epio   The epio instance.
  * @param cycles Number of cycles to advance.
  * @see epio_get_cycle_count()
@@ -280,6 +284,71 @@ EPIO_EXPORT uint64_t epio_get_cycle_count(epio_t *epio);
  * @see epio_get_cycle_count()
  */
 EPIO_EXPORT void epio_reset_cycle_count(epio_t *epio);
+
+/**
+ * @brief Default nominal system clock frequency, in Hz.
+ */
+#define EPIO_DEFAULT_SYSCLK_HZ  150000000
+
+/**
+ * @brief Enable or disable SM clock dividers.
+ *
+ * Disabled by default, in which case every enabled SM executes on every
+ * cycle and CLKDIV is ignored.  When enabled, each SM's CLKDIV register
+ * (16 bit integer, 8 bit fraction, first-order delta-sigma) determines which
+ * system clock cycles it executes on, per the RP2350 datasheet 11.5.5.
+ *
+ * Clock dividers are free-running: they count whether or not their SM is
+ * enabled.  All dividers start from an initial phase of 0, as after
+ * epio_restart_clkdiv().
+ *
+ * @param epio    The epio instance.
+ * @param enabled 1 to honour CLKDIV, 0 to ignore it.
+ */
+EPIO_EXPORT void epio_set_clkdiv_enabled(epio_t *epio, uint8_t enabled);
+
+/**
+ * @brief Return whether SM clock dividers are enabled.
+ *
+ * @param epio  The epio instance.
+ * @return      1 if CLKDIV is honoured, 0 if it is ignored.
+ * @see epio_set_clkdiv_enabled()
+ */
+EPIO_EXPORT uint8_t epio_get_clkdiv_enabled(epio_t *epio);
+
+/**
+ * @brief Restart the clock dividers of some SMs in a block.
+ *
+ * Equivalent to writing @p sm_mask to CTRL CLKDIV_RESTART.  Each divider
+ * restarts from an initial phase of 0, so the next cycle asserts its SM's
+ * clock enable.  Dividers with the same divisor restarted together run in
+ * lockstep.
+ *
+ * @param epio    The epio instance.
+ * @param block   PIO block index (0 to NUM_PIO_BLOCKS-1).
+ * @param sm_mask Bit mask of SMs (0x0 to 0xF).
+ */
+EPIO_EXPORT void epio_restart_clkdiv(epio_t *epio, uint8_t block, uint8_t sm_mask);
+
+/**
+ * @brief Set the nominal system clock frequency.
+ *
+ * epio does not use this itself.  It is provided so hosts can convert
+ * cycle counts to time.  Defaults to EPIO_DEFAULT_SYSCLK_HZ.
+ *
+ * @param epio  The epio instance.
+ * @param hz    System clock frequency in Hz (non-zero).
+ */
+EPIO_EXPORT void epio_set_sysclk_hz(epio_t *epio, uint32_t hz);
+
+/**
+ * @brief Return the nominal system clock frequency.
+ *
+ * @param epio  The epio instance.
+ * @return      System clock frequency in Hz.
+ * @see epio_set_sysclk_hz()
+ */
+EPIO_EXPORT uint32_t epio_get_sysclk_hz(epio_t *epio);
 
 /** @} */
 

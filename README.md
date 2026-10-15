@@ -119,7 +119,7 @@ Current limitations:
 - MOVs to/from the RX FIFO are not supported (`FJOIN_RX_PUT`, `FJOIN_RX_GET`).
 - Does not support 2 cycle GPIO input delay via flip-flops to avoid meta-stability.
 - Only supports 4 word FIFOs (`FJOIN_RX` and `FJOIN_TX` are ignored).
-- Ignores clock divider settings.
+- Clock dividers are ignored unless enabled with `epio_set_clkdiv_enabled()`.
 - `EXEC_STALLED` in `EXECCTRL` isn't reported.
 - Limited DMA support - a pair of channels that reads an address from one SM's RX FIFO and writes the SRAM value there to another SM's TX FIFO, and a channel that drains an SM's RX FIFO into an SRAM ring.
 

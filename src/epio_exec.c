@@ -51,6 +51,66 @@ uint16_t epio_get_instr(epio_t *epio, uint8_t block, uint8_t instr_num) {
     return INSTR(block, instr_num);
 }
 
+// Advances an SM's clock divider by one system clock cycle, returning 1 if
+// the SM's clock enable is asserted this cycle (11.5.5).
+//
+// The divider counts down from the divisor n and emits an enable pulse when
+// it reaches 1.  For a fractional divisor it keeps a running total of the
+// fractional part, and each time that wraps through 1 the next division
+// period is n + 1 rather than n.  An integer part of 0 means 65536.
+static uint8_t epio_clkdiv_tick(epio_t *epio, uint8_t block, uint8_t sm) {
+    if (!epio->clkdiv_enabled) {
+        return 1;
+    }
+
+    if (SM(block, sm).clkdiv_count > 1) {
+        SM(block, sm).clkdiv_count--;
+        return 0;
+    }
+
+    uint32_t period = CLKDIV_INT_GET(block, sm);
+    if (period == 0) {
+        period = 65536;
+    }
+    SM(block, sm).clkdiv_frac_acc += CLKDIV_FRAC_GET(block, sm);
+    if (SM(block, sm).clkdiv_frac_acc >= 256) {
+        SM(block, sm).clkdiv_frac_acc -= 256;
+        period++;
+    }
+    SM(block, sm).clkdiv_count = period;
+    return 1;
+}
+
+void epio_set_clkdiv_enabled(epio_t *epio, uint8_t enabled) {
+    epio->clkdiv_enabled = enabled ? 1 : 0;
+}
+
+uint8_t epio_get_clkdiv_enabled(epio_t *epio) {
+    return epio->clkdiv_enabled;
+}
+
+void epio_restart_clkdiv(epio_t *epio, uint8_t block, uint8_t sm_mask) {
+    assert(block < NUM_PIO_BLOCKS && "Invalid PIO block");
+    assert(sm_mask <= 0xF && "Invalid SM mask");
+    for (int sm = 0; sm < NUM_SMS_PER_BLOCK; sm++) {
+        if (sm_mask & (1 << sm)) {
+            // Initial phase of 0 (CTRL CLKDIV_RESTART, 11.7): the next
+            // cycle is an enable pulse, as from reset.
+            SM(block, sm).clkdiv_count = 1;
+            SM(block, sm).clkdiv_frac_acc = 0;
+        }
+    }
+}
+
+void epio_set_sysclk_hz(epio_t *epio, uint32_t hz) {
+    assert(hz > 0 && "System clock frequency must be non-zero");
+    epio->sysclk_hz = hz;
+}
+
+uint32_t epio_get_sysclk_hz(epio_t *epio) {
+    return epio->sysclk_hz;
+}
+
 // Step all enabled SMs once.
 void epio_step_cycles(epio_t *epio, uint32_t cycles) {
     assert(cycles > 0 && "Must step at least one cycle");
@@ -67,7 +127,9 @@ void epio_step_cycles(epio_t *epio, uint32_t cycles) {
         // !!!
         for (int block = 0; block < NUM_PIO_BLOCKS; block++) {
             for (int sm = 0; sm < NUM_SMS_PER_BLOCK; sm++) {
-                if (SM(block, sm).enabled) {
+                // The divider runs whether or not the SM is enabled
+                uint8_t clock_enable = epio_clkdiv_tick(epio, block, sm);
+                if (SM(block, sm).enabled && clock_enable) {
                     epio_sm_step(epio, block, sm);
                 }
             }

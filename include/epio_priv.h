@@ -85,6 +85,13 @@ typedef struct {
     // If exec_pending is set, this instruction should be executed next
     uint16_t exec_instr;
 
+    // Clock divider (11.5.5).  System clock cycles until the next clock
+    // enable pulse, and the first-order delta-sigma accumulator for the
+    // fractional divisor.  The divider is free-running - it counts whether
+    // or not the SM is enabled (CTRL CLKDIV_RESTART, 11.7).
+    uint32_t clkdiv_count;
+    uint16_t clkdiv_frac_acc;
+
     // FIFO state of this state machine
     epio_fifo_state_t fifo;
 } epio_sm_state_t;
@@ -210,6 +217,13 @@ struct epio_t {
     // Number of cycles that have elapsed since the last reset
     uint64_t cycle_count;
 
+    // Whether SM clock dividers are honoured.  When 0 (the default), every
+    // enabled SM runs on every cycle, whatever its CLKDIV.
+    uint8_t clkdiv_enabled;
+
+    // Nominal system clock frequency, for hosts converting cycles to time
+    uint32_t sysclk_hz;
+
     // SRAM
     uint8_t *sram;
 
@@ -325,6 +339,12 @@ void epio_dma_step(epio_t *epio);
     ((REG(BLOCK, _SM).pinctrl >> 0) & 0x1F)
 #define SIDESET_COUNT_GET(BLOCK, _SM) \
     ((REG(BLOCK, _SM).pinctrl >> 29) & 0x7)
+
+// CLKDIV register fields
+#define CLKDIV_INT_GET(BLOCK, _SM) \
+    ((REG(BLOCK, _SM).clkdiv >> 16) & 0xFFFF)
+#define CLKDIV_FRAC_GET(BLOCK, _SM) \
+    ((REG(BLOCK, _SM).clkdiv >> 8) & 0xFF)
 
 // Macros to simplify PIO emulation
 #define NEW_INSTR(NEW_PC)   do { \
