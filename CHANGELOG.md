@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Added:
+
+- `epio_set_cycle_callback()`, a host callback at the end of every cycle with
+  the cycle number, GPIO output levels and enables, and which changed since
+  the previous callback.  It may set input levels for the next cycle, so a
+  host model of an attached device can respond to PIO.
+- Documented how a host drives GPIOs no PIO block controls (as the SIO
+  would).
+
 ## v0.2.2 - 2026-10-13
 
 Fixed:

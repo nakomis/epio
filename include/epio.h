@@ -265,6 +265,46 @@ EPIO_EXPORT uint16_t epio_get_instr(epio_t *epio, uint8_t block, uint8_t instr_n
 EPIO_EXPORT void epio_step_cycles(epio_t *epio, uint32_t cycles);
 
 /**
+ * @brief Callback made at the end of every cycle.
+ *
+ * @param epio     The epio instance.
+ * @param cycle    The cycle just executed, counting from 0, as
+ *                 epio_get_cycle_count() returned before it.
+ * @param out      GPIO output levels (bit N = GPIO N), whether or not each
+ *                 GPIO is an output.
+ * @param oe       GPIO output enables (1 = output).
+ * @param changed  GPIOs whose output level or enable changed since the
+ *                 previous callback - in this cycle, or set by the host
+ *                 between calls to epio_step_cycles().
+ * @param ctx      The context pointer given to epio_set_cycle_callback().
+ */
+typedef void (*epio_cycle_callback_t)(
+    epio_t *epio,
+    uint64_t cycle,
+    uint64_t out,
+    uint64_t oe,
+    uint64_t changed,
+    void *ctx
+);
+
+/**
+ * @brief Set a callback to be made at the end of every cycle.
+ *
+ * Lets a host follow every change to the GPIO outputs, for example to drive
+ * a model of an attached device.  It is made after all SMs have executed,
+ * and IRQ and DMA updates for the cycle are complete.  The callback may
+ * set GPIO input levels, which take effect from the next cycle.
+ *
+ * Changes are reported relative to the GPIO outputs when the callback was
+ * set.
+ *
+ * @param epio      The epio instance.
+ * @param callback  The callback, or NULL to remove it.
+ * @param ctx       Passed to the callback.
+ */
+EPIO_EXPORT void epio_set_cycle_callback(epio_t *epio, epio_cycle_callback_t callback, void *ctx);
+
+/**
  * @brief Return the total number of cycles executed since last reset.
  *
  * @param epio  The epio instance.
@@ -594,6 +634,12 @@ EPIO_EXPORT void epio_set_gpio_input_level(epio_t *epio, uint8_t pin, uint8_t le
  * @brief Set the level of a GPIO configured as an output.
  *
  * Overrides the PIO-driven level on an output pin, for test setup purposes.
+ *
+ * Also how a host drives GPIOs that no PIO block controls (see
+ * epio_set_gpio_output_control()), such as those the RP2350's SIO would
+ * drive: PIO never writes such a GPIO, so its level and direction are
+ * whatever the host last set with this and epio_set_gpio_output() /
+ * epio_set_gpio_input().
  *
  * @param epio  The epio instance.
  * @param pin   GPIO pin number (0 to NUM_GPIOS-1).
