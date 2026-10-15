@@ -12,6 +12,11 @@ Added:
   restarts them from phase 0 like `CTRL` `CLKDIV_RESTART`.
 - `epio_set_sysclk_hz()` and `epio_get_sysclk_hz()`, a nominal system clock
   frequency (default 150 MHz) for hosts converting cycle counts to time.
+- `epio_write_ctrl()` and `epio_read_ctrl()`, the `CTRL` register:
+  `SM_ENABLE`, `CLKDIV_RESTART`, and the RP2350's `NEXT_PIO_MASK` /
+  `PREV_PIO_MASK` with `NEXTPREV_SM_ENABLE`, `NEXTPREV_SM_DISABLE` and
+  `NEXTPREV_CLKDIV_RESTART`, so SMs in different blocks start and synchronise
+  their clock dividers on the same cycle.  `SM_RESTART` is not supported.
 
 ## v0.2.2 - 2026-10-13
 
