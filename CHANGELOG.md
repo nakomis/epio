@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+Added:
+
+- `epio_set_dreq_callbacks()`, a general model of DMA feeding an SM's TX
+  FIFO and draining its RX FIFO: host callbacks made at the end of each cycle
+  while TX DREQ (FIFO not full) or RX DREQ (FIFO not empty) is asserted, one
+  word per direction per cycle.
+
 ## v0.2.2 - 2026-10-13
 
 Fixed:

@@ -87,6 +87,11 @@ typedef struct {
 
     // FIFO state of this state machine
     epio_fifo_state_t fifo;
+
+    // Host DREQ callbacks modelling DMA, and their context
+    epio_dreq_tx_callback_t dreq_tx;
+    epio_dreq_rx_callback_t dreq_rx;
+    void *dreq_ctx;
 } epio_sm_state_t;
 
 // DMA state for a single DMA channel
@@ -243,6 +248,7 @@ void epio_sram_free(epio_t *epio);
 
 // epio_gpio.c
 uint8_t epio_get_jmp_pin_state(epio_t *epio, uint8_t block, uint8_t sm, uint8_t offset);
+void epio_dreq_step(epio_t *epio);
 
 // epio_dma.c
 void epio_init_dma(epio_t *epio);

@@ -265,6 +265,76 @@ EPIO_EXPORT uint16_t epio_get_instr(epio_t *epio, uint8_t block, uint8_t instr_n
 EPIO_EXPORT void epio_step_cycles(epio_t *epio, uint32_t cycles);
 
 /**
+ * @brief Callback supplying a word to an SM's TX FIFO while its TX DREQ is
+ *        asserted.
+ *
+ * @param epio   The epio instance.
+ * @param block  PIO block index.
+ * @param sm     State machine index.
+ * @param word   Set to the word to push, if one is supplied.
+ * @param ctx    The context pointer given to epio_set_dreq_callbacks().
+ * @return       1 if @p word was set and should be pushed, 0 if there is no
+ *               data (a DMA underrun).
+ */
+typedef uint8_t (*epio_dreq_tx_callback_t)(
+    epio_t *epio,
+    uint8_t block,
+    uint8_t sm,
+    uint32_t *word,
+    void *ctx
+);
+
+/**
+ * @brief Callback receiving a word popped from an SM's RX FIFO while its RX
+ *        DREQ is asserted.
+ *
+ * @param epio   The epio instance.
+ * @param block  PIO block index.
+ * @param sm     State machine index.
+ * @param word   The word popped from the RX FIFO.
+ * @param ctx    The context pointer given to epio_set_dreq_callbacks().
+ */
+typedef void (*epio_dreq_rx_callback_t)(
+    epio_t *epio,
+    uint8_t block,
+    uint8_t sm,
+    uint32_t word,
+    void *ctx
+);
+
+/**
+ * @brief Model DMA feeding an SM's TX FIFO and draining its RX FIFO.
+ *
+ * A general alternative to the fixed DMA patterns of
+ * epio_dma_setup_read_pio_chain() and epio_dma_setup_capture_pio_ring().
+ * At the end of every cycle, after the SMs have executed:
+ * - if the SM's TX FIFO is not full (TX DREQ asserted), @p tx is called and
+ *   any word it supplies is pushed;
+ * - if the SM's RX FIFO is not empty (RX DREQ asserted), a word is popped
+ *   and passed to @p rx.
+ *
+ * This is an idealised DMA: at most one transfer per direction per SM per
+ * cycle, with no latency, so a word supplied at the end of cycle t is
+ * available to the SM in cycle t + 1.  DREQs are asserted whether or not
+ * the SM is enabled.
+ *
+ * @param epio   The epio instance.
+ * @param block  PIO block index (0 to NUM_PIO_BLOCKS-1).
+ * @param sm     State machine index (0 to NUM_SMS_PER_BLOCK-1).
+ * @param tx     TX FIFO feeder, or NULL for none.
+ * @param rx     RX FIFO drain, or NULL for none.
+ * @param ctx    Passed to both callbacks.
+ */
+EPIO_EXPORT void epio_set_dreq_callbacks(
+    epio_t *epio,
+    uint8_t block,
+    uint8_t sm,
+    epio_dreq_tx_callback_t tx,
+    epio_dreq_rx_callback_t rx,
+    void *ctx
+);
+
+/**
  * @brief Return the total number of cycles executed since last reset.
  *
  * @param epio  The epio instance.

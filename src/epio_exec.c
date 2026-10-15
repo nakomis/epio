@@ -104,6 +104,7 @@ static void epio_finish_step(epio_t *epio) {
 // DMA chains
 static void epio_after_step(epio_t *epio) {
     epio_dma_step(epio);
+    epio_dreq_step(epio);
 }
 
 static void epio_sm_step(epio_t *epio, uint8_t block, uint8_t sm) {
