@@ -249,3 +249,38 @@ void epio_dma_step(epio_t *epio) {
         }
     }
 }
+
+void epio_set_dreq_callbacks(
+    epio_t *epio,
+    uint8_t block,
+    uint8_t sm,
+    epio_dreq_tx_callback_t tx,
+    epio_dreq_rx_callback_t rx,
+    void *ctx
+) {
+    CHECK_BLOCK_SM();
+    SM(block, sm).dreq_tx = tx;
+    SM(block, sm).dreq_rx = rx;
+    SM(block, sm).dreq_ctx = ctx;
+}
+
+// Services each SM's DREQ callbacks at the end of a cycle
+void epio_dreq_step(epio_t *epio) {
+    for (int block = 0; block < NUM_PIO_BLOCKS; block++) {
+        for (int sm = 0; sm < NUM_SMS_PER_BLOCK; sm++) {
+            epio_sm_state_t *state = &SM(block, sm);
+            if (state->dreq_tx != NULL &&
+                epio_tx_fifo_depth(epio, block, sm) < MAX_FIFO_DEPTH) {
+                uint32_t word;
+                if (state->dreq_tx(epio, block, sm, &word, state->dreq_ctx)) {
+                    epio_push_tx_fifo(epio, block, sm, word);
+                }
+            }
+            if (state->dreq_rx != NULL &&
+                epio_rx_fifo_depth(epio, block, sm) > 0) {
+                uint32_t word = epio_pop_rx_fifo(epio, block, sm);
+                state->dreq_rx(epio, block, sm, word, state->dreq_ctx);
+            }
+        }
+    }
+}
