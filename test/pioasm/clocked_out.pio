@@ -1,0 +1,10 @@
+; Test program for the sm_config shim: side-set and wait gpio configuration
+; as the pioasm c-sdk output encodes it.
+
+.program clocked_out
+.side_set 2 opt pindirs
+    wait 1 gpio 20
+.wrap_target
+    out pins, 8     side 0b10
+    nop             side 0b01
+.wrap
