@@ -145,6 +145,71 @@ uint8_t epio_is_sm_enabled(epio_t *epio, uint8_t block, uint8_t sm) {
     return SM(block, sm).enabled;
 }
 
+// CTRL register fields (11.7)
+#define CTRL_SM_ENABLE(V)               ((V) & 0xF)
+#define CTRL_SM_RESTART(V)              (((V) >> 4) & 0xF)
+#define CTRL_CLKDIV_RESTART(V)          (((V) >> 8) & 0xF)
+#define CTRL_PREV_PIO_MASK(V)           (((V) >> 16) & 0xF)
+#define CTRL_NEXT_PIO_MASK(V)           (((V) >> 20) & 0xF)
+#define CTRL_NEXTPREV_SM_ENABLE         (1u << 24)
+#define CTRL_NEXTPREV_SM_DISABLE        (1u << 25)
+#define CTRL_NEXTPREV_CLKDIV_RESTART    (1u << 26)
+#define CTRL_RESERVED                   (0xF8000000u | 0x0000F000u)
+
+// Applies NEXTPREV_SM_ENABLE/DISABLE to a set of SMs in another block
+static void epio_ctrl_nextprev_enable(epio_t *epio, uint8_t block, uint8_t sm_mask, uint32_t value) {
+    for (int sm = 0; sm < NUM_SMS_PER_BLOCK; sm++) {
+        if (sm_mask & (1 << sm)) {
+            // If both are set, the disable takes precedence
+            if (value & CTRL_NEXTPREV_SM_DISABLE) {
+                SM(block, sm).enabled = 0;
+            } else if (value & CTRL_NEXTPREV_SM_ENABLE) {
+                SM(block, sm).enabled = 1;
+            }
+        }
+    }
+}
+
+void epio_write_ctrl(epio_t *epio, uint8_t block, uint32_t value) {
+    CHECK_BLOCK();
+    assert((value & CTRL_RESERVED) == 0 && "CTRL reserved bits must be 0");
+    assert(CTRL_SM_RESTART(value) == 0 && "CTRL SM_RESTART is not supported");
+
+    // Every effect of a single write lands between two cycles, so all the
+    // SMs and dividers it touches - in this and neighbouring blocks - start
+    // on the same cycle.
+    for (int sm = 0; sm < NUM_SMS_PER_BLOCK; sm++) {
+        SM(block, sm).enabled = (CTRL_SM_ENABLE(value) >> sm) & 0x1;
+    }
+    epio_restart_clkdiv(epio, block, CTRL_CLKDIV_RESTART(value));
+
+    // NEXT_PIO_MASK and PREV_PIO_MASK select SMs in the neighbouring blocks,
+    // wrapping around from the highest-numbered block to block 0
+    uint8_t prev_block = (block + NUM_PIO_BLOCKS - 1) % NUM_PIO_BLOCKS;
+    uint8_t next_block = (block + 1) % NUM_PIO_BLOCKS;
+    uint8_t prev_mask = CTRL_PREV_PIO_MASK(value);
+    uint8_t next_mask = CTRL_NEXT_PIO_MASK(value);
+
+    if (value & CTRL_NEXTPREV_CLKDIV_RESTART) {
+        epio_restart_clkdiv(epio, prev_block, prev_mask);
+        epio_restart_clkdiv(epio, next_block, next_mask);
+    }
+    epio_ctrl_nextprev_enable(epio, prev_block, prev_mask, value);
+    epio_ctrl_nextprev_enable(epio, next_block, next_mask, value);
+}
+
+uint32_t epio_read_ctrl(epio_t *epio, uint8_t block) {
+    CHECK_BLOCK();
+    // All other fields are self-clearing or reserved, so read as 0
+    uint32_t value = 0;
+    for (int sm = 0; sm < NUM_SMS_PER_BLOCK; sm++) {
+        if (SM(block, sm).enabled) {
+            value |= (1u << sm);
+        }
+    }
+    return value;
+}
+
 void epio_disable_sm(epio_t *epio, uint8_t block, uint8_t sm) {
     CHECK_BLOCK_SM();
     SM(block, sm).enabled = 0;

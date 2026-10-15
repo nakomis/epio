@@ -331,6 +331,44 @@ EPIO_EXPORT uint8_t epio_get_clkdiv_enabled(epio_t *epio);
 EPIO_EXPORT void epio_restart_clkdiv(epio_t *epio, uint8_t block, uint8_t sm_mask);
 
 /**
+ * @brief Write a PIO block's CTRL register.
+ *
+ * Models a single write to CTRL (RP2350 datasheet 11.7), taking effect
+ * between two cycles:
+ * - SM_ENABLE (bits 3:0) enables or disables each of this block's SMs.
+ * - CLKDIV_RESTART (bits 11:8) restarts this block's clock dividers, as
+ *   epio_restart_clkdiv().
+ * - PREV_PIO_MASK (bits 19:16) and NEXT_PIO_MASK (bits 23:20) select SMs in
+ *   the neighbouring lower- and higher-numbered blocks (wrapping around), to
+ *   which NEXTPREV_SM_ENABLE (bit 24), NEXTPREV_SM_DISABLE (bit 25) and
+ *   NEXTPREV_CLKDIV_RESTART (bit 26) apply.  If both enable and disable are
+ *   set, disable takes precedence.
+ *
+ * This is how SMs in different blocks are started, and their clock dividers
+ * synchronised, on exactly the same cycle.  SM_RESTART (bits 7:4) is not
+ * supported, and must be 0, as must the reserved bits.
+ *
+ * To emulate a set-bits write (hw_set_bits), OR the bits into the value
+ * from epio_read_ctrl().
+ *
+ * @param epio   The epio instance.
+ * @param block  PIO block index (0 to NUM_PIO_BLOCKS-1).
+ * @param value  Value written to CTRL.
+ */
+EPIO_EXPORT void epio_write_ctrl(epio_t *epio, uint8_t block, uint32_t value);
+
+/**
+ * @brief Read a PIO block's CTRL register.
+ *
+ * Returns SM_ENABLE (bits 3:0); all other fields read as 0.
+ *
+ * @param epio   The epio instance.
+ * @param block  PIO block index (0 to NUM_PIO_BLOCKS-1).
+ * @return       CTRL register value.
+ */
+EPIO_EXPORT uint32_t epio_read_ctrl(epio_t *epio, uint8_t block);
+
+/**
  * @brief Set the nominal system clock frequency.
  *
  * epio does not use this itself.  It is provided so hosts can convert

@@ -24,6 +24,11 @@ Added:
   level, through each block's 2-flipflop input synchronisers (two cycles of
   latency).  `epio_set_input_sync_bypass()` sets a block's
   `INPUT_SYNC_BYPASS`, relative to its GPIOBASE.
+- `epio_write_ctrl()` and `epio_read_ctrl()`, the `CTRL` register:
+  `SM_ENABLE`, `CLKDIV_RESTART`, and the RP2350's `NEXT_PIO_MASK` /
+  `PREV_PIO_MASK` with `NEXTPREV_SM_ENABLE`, `NEXTPREV_SM_DISABLE` and
+  `NEXTPREV_CLKDIV_RESTART`, so SMs in different blocks start and synchronise
+  their clock dividers on the same cycle.  `SM_RESTART` is not supported.
 
 ## v0.2.2 - 2026-10-13
 
