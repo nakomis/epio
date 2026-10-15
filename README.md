@@ -121,7 +121,7 @@ Current limitations:
 - Only supports 4 word FIFOs (`FJOIN_RX` and `FJOIN_TX` are ignored).
 - Clock dividers are ignored unless enabled with `epio_set_clkdiv_enabled()`.
 - `EXEC_STALLED` in `EXECCTRL` isn't reported.
-- Limited DMA support - a pair of channels that reads an address from one SM's RX FIFO and writes the SRAM value there to another SM's TX FIFO, and a channel that drains an SM's RX FIFO into an SRAM ring.
+- Limited DMA support - a pair of channels that reads an address from one SM's RX FIFO and writes the SRAM value there to another SM's TX FIFO, a channel that drains an SM's RX FIFO into an SRAM ring, and host DREQ callbacks (`epio_set_dreq_callbacks()`) modelling an idealised channel per FIFO.
 
 ## WASM
 
