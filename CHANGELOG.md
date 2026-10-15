@@ -44,6 +44,13 @@ Added:
   plus `epio_add_program()` (JMP relocation, and WAIT GPIO adjustment for
   GPIOBASE 16) and `epio_sm_init()`.  With `shim/` on the include path, the
   generated header compiles unmodified on the host.
+- The `sm_config_*()` pin setters take absolute GPIO numbers (0-47), as the
+  pico-sdk does on RP2350B: `pio_sm_config` carries the SDK's `pinhi`, and
+  `epio_sm_init()` moves each set pin into the block's 32-pin window for its
+  GPIOBASE, asserting (the SDK's `PICO_ERROR_BAD_ALIGNMENT`) if one falls
+  outside it.  Previously the setters kept only `pin & 31`, so with GPIOBASE
+  16 an absolute pin 18 landed on GPIO 34.  Callers who passed pins relative
+  to GPIOBASE 16 to work round that should now pass absolute ones.
 
 ## v0.2.2 - 2026-10-13
 

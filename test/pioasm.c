@@ -163,6 +163,122 @@ static void pioasm_pin_setters(void **state) {
 
     sm_config_set_jmp_pin(&c, 41);
     assert_int_equal((c.execctrl >> 24) & 0x1F, 9);
+
+    // ... and record each pin's 16-pin range, as the pico-sdk's pinhi does
+    assert_int_equal((c.pinhi >> 0) & 0x1F, 0);    // OUT 0
+    assert_int_equal((c.pinhi >> 5) & 0x1F, 2);    // SET 33
+    assert_int_equal((c.pinhi >> 10) & 0x1F, 1);   // SIDESET 16
+    assert_int_equal((c.pinhi >> 15) & 0x1F, 0);   // IN 7
+    assert_int_equal((c.pinhi >> 20) & 0x1F, 2);   // JMP_PIN 41
+    expect_assert_failure(sm_config_set_out_pin_base(&c, 48));
+    expect_assert_failure(sm_config_set_jmp_pin(&c, 48));
+}
+
+// pio_sm_set_config() with GPIOBASE 16: absolute pins are moved into the
+// block's window (GPIO 16-47 -> 0-31), as on hardware via the pico-sdk.
+static void pioasm_sm_init_gpiobase_16(void **state) {
+    (void)state;
+    epio_t *epio = epio_init();
+    assert_non_null(epio);
+    epio_set_gpiobase(epio, 1, 16);
+
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_out_pins(&c, 18, 23);
+    sm_config_set_sideset_pins(&c, 16);
+    sm_config_set_set_pins(&c, 40, 2);
+    sm_config_set_in_pins(&c, 32);
+    sm_config_set_jmp_pin(&c, 47);
+    epio_sm_init(epio, 1, 2, 0, &c);
+
+    epio_sm_reg_t reg;
+    epio_get_sm_reg(epio, 1, 2, &reg);
+    assert_int_equal(reg.pinctrl & 0x1F, 2);            // OUT_BASE: GPIO 18
+    assert_int_equal((reg.pinctrl >> 10) & 0x1F, 0);    // SIDESET_BASE: GPIO 16
+    assert_int_equal((reg.pinctrl >> 5) & 0x1F, 24);    // SET_BASE: GPIO 40
+    assert_int_equal((reg.pinctrl >> 15) & 0x1F, 16);   // IN_BASE: GPIO 32
+    assert_int_equal((reg.execctrl >> 24) & 0x1F, 31);  // JMP_PIN: GPIO 47
+    assert_int_equal((reg.pinctrl >> 20) & 0x3F, 23);   // counts untouched
+    assert_int_equal((reg.pinctrl >> 26) & 0x07, 2);
+
+    // A pin set by hand into the window's lower half stays where it is if
+    // its field was never set through a setter (pinhi 0b11111)
+    pio_sm_config d = pio_get_default_sm_config();
+    d.pinctrl = 5;   // OUT_BASE 5, relative
+    epio_sm_init(epio, 1, 3, 0, &d);
+    epio_get_sm_reg(epio, 1, 3, &reg);
+    assert_int_equal(reg.pinctrl & 0x1F, 5);
+
+    epio_free(epio);
+}
+
+// With GPIOBASE 0, pins 0-31 are applied as given
+static void pioasm_sm_init_gpiobase_0(void **state) {
+    (void)state;
+    epio_t *epio = epio_init();
+    assert_non_null(epio);
+
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_out_pins(&c, 3, 8);
+    sm_config_set_sideset_pins(&c, 20);
+    sm_config_set_jmp_pin(&c, 31);
+    epio_sm_init(epio, 0, 0, 0, &c);
+    epio_sm_reg_t reg;
+    epio_get_sm_reg(epio, 0, 0, &reg);
+    assert_int_equal(reg.pinctrl, c.pinctrl);
+    assert_int_equal(reg.execctrl, c.execctrl);
+
+    epio_free(epio);
+}
+
+// A config whose pins can't all be reached from the block's window, as
+// pio_sm_set_config()'s PICO_ERROR_BAD_ALIGNMENT
+static void pioasm_sm_init_pins_outside_window(void **state) {
+    (void)state;
+    epio_t *epio = epio_init();
+    assert_non_null(epio);
+    epio_set_gpiobase(epio, 1, 16);
+
+    pio_sm_config low = pio_get_default_sm_config();
+    sm_config_set_out_pins(&low, 3, 4);
+    expect_assert_failure(epio_sm_init(epio, 1, 0, 0, &low));
+
+    pio_sm_config high = pio_get_default_sm_config();
+    sm_config_set_jmp_pin(&high, 40);
+    expect_assert_failure(epio_sm_init(epio, 0, 0, 0, &high));
+
+    epio_free(epio);
+}
+
+// End to end: pulse_train given absolute SET pin 16 in a GPIOBASE 16 block
+// pulses GPIO 16 (before the fix it pulsed GPIO 32)
+static int edges_16, edges_32;
+static void count_edges(epio_t *e, uint64_t cycle, uint64_t out, uint64_t oe, uint64_t changed, void *ctx) {
+    (void)e; (void)cycle; (void)oe; (void)ctx;
+    if ((changed >> 16) & (out >> 16) & 1) edges_16++;
+    if ((changed >> 32) & (out >> 32) & 1) edges_32++;
+}
+
+static void pioasm_gpiobase_16_drives_absolute_pin(void **state) {
+    (void)state;
+    epio_t *epio = epio_init();
+    assert_non_null(epio);
+    epio_set_gpiobase(epio, 0, 16);
+    for (uint8_t pin = 16; pin < 48; pin++) {
+        epio_set_gpio_output_control(epio, pin, 0);
+        epio_set_gpio_output(epio, pin);
+    }
+    uint off = epio_add_program(epio, 0, &pulse_train_program, 0);
+    pio_sm_config c = pulse_train_config(off, 16);
+    epio_sm_init(epio, 0, 0, off, &c);
+    edges_16 = edges_32 = 0;
+    epio_set_cycle_callback(epio, count_edges, NULL);
+    epio_push_tx_fifo(epio, 0, 0, 2);   // three pulses
+    epio_enable_sm(epio, 0, 0);
+    epio_step_cycles(epio, 40);
+    assert_int_equal(edges_16, 3);
+    assert_int_equal(edges_32, 0);
+
+    epio_free(epio);
 }
 
 static void pioasm_shift_and_clkdiv_setters(void **state) {
@@ -262,6 +378,10 @@ int main(void) {
         cmocka_unit_test(pioasm_shift_and_clkdiv_setters),
         cmocka_unit_test(pioasm_setters_invalid),
         cmocka_unit_test(pioasm_sm_init),
+        cmocka_unit_test(pioasm_sm_init_gpiobase_16),
+        cmocka_unit_test(pioasm_sm_init_gpiobase_0),
+        cmocka_unit_test(pioasm_sm_init_pins_outside_window),
+        cmocka_unit_test(pioasm_gpiobase_16_drives_absolute_pin),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
