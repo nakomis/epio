@@ -19,7 +19,6 @@ Added:
 - `epio_set_sysclk_hz()` and `epio_get_sysclk_hz()`, a nominal system clock
   frequency (default 150 MHz) for hosts converting cycle counts to time.
 
-
 ## v0.2.2 - 2026-10-13
 
 Fixed:
